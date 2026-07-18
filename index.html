@@ -311,6 +311,16 @@
   }
   .control-select:focus{outline:none;border-color:var(--accent)}
   .control-select option{background:var(--dropdown,#fff);color:var(--ink)}
+  /* skin picker carries the selected sample colour as a left adornment
+     (native <option> swatches don't render on iOS, this does everywhere) */
+  .select-wrap{position:relative}
+  .select-swatch{
+    display:none;
+    position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    width:18px;height:18px;border-radius:50%;
+    border:1px solid rgba(0,0,0,.28);pointer-events:none;z-index:1;
+  }
+  .control-select.has-swatch{padding-left:40px}
 
   /* ---- the curve ------------------------------------------------------ */
   #hours{padding:18px;margin-bottom:16px}
@@ -405,7 +415,8 @@
     /* 2. swap the chip rows for native dropdowns */
     #controls .chips{display:none}
     .control-select{display:block}
-    /* the JS aggregates adjacent hours, so bars can fill their column */
+    .select-swatch{display:block}
+    /* the JS buckets the day into 2-hour columns, so bars fill their column */
     #hours{padding:14px}
     .chart{gap:6px}
     #yaxis{width:18px}
@@ -845,10 +856,13 @@ function buildControls(){
     pc.appendChild(b);
   });
 
-  // native dropdowns — the compact mobile mirror of the chip rows
+  // native dropdowns — the compact mobile mirror of the chip rows.
+  // The skin picker carries the sample colour as an adornment swatch; the
+  // description lives in the hint right below, so the option text stays terse.
   const ss=$('skinSelect');
-  ss.innerHTML=Object.keys(SKIN).map(k=>`<option value="${k}">Type ${k} — ${SKIN[k].desc.split('—').pop().trim()}</option>`).join('');
+  ss.innerHTML=Object.keys(SKIN).map(k=>`<option value="${k}">Type ${k}</option>`).join('');
   ss.value=state.skin;
+  $('skinSwatch').style.background=SKIN[state.skin].swatch;
   ss.onchange=()=>{state.skin=ss.value; savePrefs(); buildControls(); render(); renderCurve();};
   const ps=$('spfSelect');
   ps.innerHTML=SPF_LIST.map(({key})=>`<option value="${key}">${key==='None'?'None':'SPF '+key}</option>`).join('');
