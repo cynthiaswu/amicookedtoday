@@ -775,7 +775,7 @@ function buildControls(){
     $('spfHint').textContent = 'Bare skin. Nothing between you and the UV.';
   } else {
     const r=spfRange(f), e=effSPF();
-    $('spfHint').innerHTML = `<b>A bottle labelled SPF ${state.spf} behaves like about SPF ${r.lo.toFixed(0)}&ndash;${r.hi.toFixed(0)} in real life.</b> `
+    $('spfHint').innerHTML = `<b>A bottle labelled SPF ${state.spf} behaves like SPF ${r.lo.toFixed(0)}&ndash;${r.hi.toFixed(0)} in real life.</b> `
       + `Use a lower label if you don't plan to reapply.`;
   }
 }
