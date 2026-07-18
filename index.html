@@ -485,8 +485,6 @@
     <b>How this works.</b> Vitamin D time uses the maintenance-dose method from Kift &amp; Webb (2024), <a href="https://doi.org/10.3390/nu16101489" target="_blank" rel="noopener">Nutrients 16:1489</a> — the short, sub-burn exposure that keeps your vitamin D topped up, scaled by skin type (types V and VI need 2.5× and 4× longer) and the live UV index. Cooked time estimates sunburn from your skin's minimal erythemal dose and the current UV. This is a friendly guide, not medical advice.
     <br><br>
     <b>Where the UV comes from.</b> Live readings come from the <a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener">Open-Meteo Forecast API</a>, whose <code>uv_index</code> is derived from NOAA's GFS model and updates every six hours. It's the erythemal (sunburn-weighted) UV index on the standard WHO 0–11+ scale, and it accounts for real cloud cover and ozone. If that feed can't be reached, the page falls back to a model computed in your browser: solar geometry for the sun's angle, the van Heuklon (1979) ozone climatology for absorption, and a background turbidity factor. Checked against NOAA/EPA's published city forecasts it lands within about a point.
-    <br><br>
-    <b>The sky above is real.</b> The sun in the background sits at its actual computed elevation for the city you're looking at, right now, and takes its colour from the current UV band. It's drawn from the same solar geometry that drives the fallback model — so when the sun is low on your screen, the numbers are low for the same reason.
 
   </div>
 </footer>
