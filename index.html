@@ -513,7 +513,7 @@
 
     <figure id="hours" class="card">
       <header>
-        <span class="eyebrow">Today's UV curve</span>
+        <span class="eyebrow" id="curveTitle">UV curve</span>
         <span id="curveLegend">skin type 3 · unprotected</span>
       </header>
       <div class="curve-key">
@@ -1193,6 +1193,15 @@ function tzOffsetHours(tz, date){
 }
 function tzGuess(lon){ return Math.round(lon/15); }   // last resort only
 
+// today's date in the place's own zone (falls back to the viewer's zone)
+function dateInTz(tz){
+  try{
+    return new Intl.DateTimeFormat('en-US',{timeZone:tz||undefined, month:'short', day:'numeric'}).format(new Date());
+  }catch(e){
+    return new Intl.DateTimeFormat('en-US',{month:'short', day:'numeric'}).format(new Date());
+  }
+}
+
 // cos(solar zenith) — the same term the UV model uses, exposed so the sky can
 // draw the sun where it actually is.
 function sunMu(lat, lon, date, tzOff, clockHour){
@@ -1250,7 +1259,9 @@ async function loadPlace(lat, lon, label, tz){
   state.lat=lat; state.lon=lon; state.place=label;
   state.sunMu = sunNow(lat, lon, tz);
   $('search').value = label;
-  $('today').textContent = 'TODAY · ' + label.toUpperCase();
+  const dstr = dateInTz(tz);
+  $('today').textContent = dstr.toUpperCase() + ' · ' + label.toUpperCase();
+  $('curveTitle').textContent = dstr + ' UV curve';
   setBanner('');
 
   // Solar geometry needs no network, so the sky can start moving to the new
