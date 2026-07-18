@@ -257,7 +257,7 @@
   }
   #stats dd{
     font-family:'Anton',sans-serif;font-size:clamp(22px,4.4vw,29px);
-    line-height:1;letter-spacing:.5px;
+    line-height:1;letter-spacing:.5px;text-align:center;
   }
   #vdVal{color:var(--good)}
   #burnVal{color:var(--burn)}
@@ -772,16 +772,16 @@ function renderCurve(){
     grid.appendChild(g);
   }
 
-  // On mobile, merge adjacent hours whose UV stays within 1 index of the run's
-  // start into one column, so the dense 15-bar chart reads at a glance. Each
-  // merged column is represented by its PEAK UV — the honest, conservative
-  // choice (tallest bar, shortest burn time).
+  // On mobile, bucket the day into 2-hour columns so the dense 15-bar chart
+  // reads at a glance. Each bucket is represented by its PEAK UV — the honest,
+  // conservative choice (tallest bar, shortest burn time).
   const groups=[];
   if(curveAggregates()){
+    const byBin=new Map();
     for(const h of pts){
-      const g=groups[groups.length-1];
-      if(g && Math.abs(h.uv - g.hours[0].uv) <= 1) g.hours.push(h);
-      else groups.push({hours:[h]});
+      const bin=Math.floor(h.hour/2);
+      if(!byBin.has(bin)){ const g={hours:[]}; byBin.set(bin,g); groups.push(g); }
+      byBin.get(bin).hours.push(h);
     }
   } else {
     for(const h of pts) groups.push({hours:[h]});
