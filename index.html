@@ -279,7 +279,7 @@
     font-family:var(--mono);font-size:10px;letter-spacing:.18em;
     text-transform:uppercase;color:var(--muted);
   }
-  #controls legend + *{clear:left}
+  #controls legend ~ *{clear:left}
   .chips{display:flex;flex-wrap:wrap;gap:8px}
   .chip{
     background:var(--chip,rgba(255,255,255,.42));
@@ -297,6 +297,20 @@
   .swatch{width:22px;height:22px;border-radius:50%;border:1px solid rgba(0,0,0,.25)}
   .skin-hint{margin-top:11px;font-size:12.5px;color:var(--muted);min-height:16px;line-height:1.5}
   .skin-hint b{color:var(--ink);font-weight:500}
+  /* native picker — the compact mobile alternative to the chip rows */
+  .control-select{
+    display:none;width:100%;
+    background:var(--chip,rgba(255,255,255,.42));
+    border:1px solid var(--glass-line);
+    color:var(--ink);border-radius:11px;padding:10px 12px;
+    font-family:'Space Grotesk',sans-serif;font-size:13.5px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5);
+    -webkit-appearance:none;appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23888' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;
+  }
+  .control-select:focus{outline:none;border-color:var(--accent)}
+  .control-select option{background:var(--dropdown,#fff);color:var(--ink)}
 
   /* ---- the curve ------------------------------------------------------ */
   #hours{padding:18px;margin-bottom:16px}
@@ -376,29 +390,35 @@
     header{padding-block:20px 16px}
     search{max-width:none}
   }
-  /* Below ~440px the 15-column UV curve's min-content is wider than the
-     viewport. Tighten the chart's gaps, axis and label type so it fits
-     without the page overflowing and clipping every card. */
+  /* Mobile density pass: less screen, so the readings get more compact. */
   @media (max-width:440px){
     :root{--shell:14px}
+    /* 1. halve the gauge dial's footprint (scale dial, number and verdict
+       together so the composition holds, then tighten the sub-copy) */
+    #gauge-card{padding:14px 16px 12px}
+    #gauge-card figure{max-width:152px}
+    #uvNum{font-size:29px}
+    #gauge-card figcaption small{font-size:8px;margin-top:3px}
+    #verdict{font-size:16px;margin-top:2px}
+    #verdictSub{font-size:11px;margin-top:3px}
+    #peakNote{margin-top:5px;line-height:1.5}
+    /* 2. swap the chip rows for native dropdowns */
+    #controls .chips{display:none}
+    .control-select{display:block}
+    /* the JS aggregates adjacent hours, so bars can fill their column */
     #hours{padding:14px}
     .chart{gap:6px}
     #yaxis{width:18px}
-    #curve{gap:2px}
-    #hlabels{gap:2px}
+    #curve{gap:3px}
+    #hlabels{gap:3px}
+    .barfill{max-width:none}
     .hcol .hr{font-size:8px}
     .hcol .mins{font-size:7.5px}
-    .barfill{max-width:14px}
-  }
-  @media (max-width:420px){
-    #stats{grid-template-columns:1fr}
   }
   @media (max-width:380px){
     #hours{padding:14px 10px}
-    .chart{gap:5px}
-    #yaxis{width:16px}
-    #curve{gap:1px}
-    #hlabels{gap:1px}
+    #curve{gap:2px}
+    #hlabels{gap:2px}
     .hcol .hr{font-size:7.5px}
     .hcol .mins{font-size:7px}
   }
@@ -451,11 +471,16 @@
         <section id="controls">
           <fieldset class="card">
             <legend>Choose your skin type</legend>
+            <div class="select-wrap">
+              <span class="select-swatch" id="skinSwatch" aria-hidden="true"></span>
+              <select class="control-select has-swatch" id="skinSelect" aria-label="Your skin type"></select>
+            </div>
             <div class="chips" id="skinChips" role="radiogroup" aria-label="Your skin type"></div>
             <p class="skin-hint" id="skinHint"></p>
           </fieldset>
           <fieldset class="card">
             <legend>Choose your sunscreen</legend>
+            <select class="control-select" id="spfSelect" aria-label="Sunscreen SPF"></select>
             <div class="chips" id="spfChips" role="radiogroup" aria-label="Sunscreen SPF"></div>
             <p class="skin-hint" id="spfHint"></p>
           </fieldset>
@@ -710,6 +735,11 @@ function shortMins(m){
   if(m>=90) return Math.round(m/60*10)/10+'h';
   return Math.round(m)+'m';
 }
+function fmtHour(hr){ return hr===0?'12a':hr<12?hr+'a':hr===12?'12p':(hr-12)+'p'; }
+// mobile only: merge adjacent hours that stay within 1 UV index of each other
+const mobileCurve = matchMedia('(max-width:440px)');
+function curveAggregates(){ return mobileCurve.matches; }
+mobileCurve.addEventListener('change', ()=>{ if(state.hourly.length) renderCurve(); });
 
 function renderCurve(){
   const wrap=$('curve'), grid=$('grid'), yax=$('yaxis');
@@ -742,26 +772,46 @@ function renderCurve(){
     grid.appendChild(g);
   }
 
-  pts.forEach(h=>{
-    const isNow = h.hour===state.nowHour;
-    const vd = vdMinsAt(h.uv), burn = burnMinsAt(h.uv);
-    const ampm = h.hour===0?'12a':h.hour<12?h.hour+'a':h.hour===12?'12p':(h.hour-12)+'p';
+  // On mobile, merge adjacent hours whose UV stays within 1 index of the run's
+  // start into one column, so the dense 15-bar chart reads at a glance. Each
+  // merged column is represented by its PEAK UV — the honest, conservative
+  // choice (tallest bar, shortest burn time).
+  const groups=[];
+  if(curveAggregates()){
+    for(const h of pts){
+      const g=groups[groups.length-1];
+      if(g && Math.abs(h.uv - g.hours[0].uv) <= 1) g.hours.push(h);
+      else groups.push({hours:[h]});
+    }
+  } else {
+    for(const h of pts) groups.push({hours:[h]});
+  }
+
+  groups.forEach(g=>{
+    const first=g.hours[0], last=g.hours[g.hours.length-1];
+    const uvs=g.hours.map(h=>h.uv);
+    const uv=Math.max(...uvs), lo=Math.min(...uvs);
+    const merged=g.hours.length>1;
+    const isNow = g.hours.some(h=>h.hour===state.nowHour);
+    const vd = vdMinsAt(uv), burn = burnMinsAt(uv);
+    const label = merged ? `${fmtHour(first.hour)}\u2013${fmtHour(last.hour)}` : fmtHour(first.hour);
 
     const col=document.createElement('div');
     col.className='col'+(isNow?' now':'');
     const bar=document.createElement('div');
     bar.className='barfill';
-    bar.style.height=(clamp(h.uv/top,0,1)*100)+'%';
-    bar.style.background=bandInk(h.uv);
-    bar.title = `${ampm} — UV ${h.uv.toFixed(1)}\n`
-      + `Sit out at ${ampm} and it takes ${shortMins(vd)} to earn your whole day's vitamin D,\n`
+    bar.style.height=(clamp(uv/top,0,1)*100)+'%';
+    bar.style.background=bandInk(uv);
+    bar.title = (merged ? `${label} — UV ${lo.toFixed(1)}\u2013${uv.toFixed(1)} (peak ${uv.toFixed(1)})\n`
+                        : `${label} — UV ${uv.toFixed(1)}\n`)
+      + `At the peak of this window it takes ${shortMins(vd)} to earn your whole day's vitamin D,\n`
       + `and ${shortMins(burn)} before you burn. Both are whole-day figures, not per-hour allowances.`;
     col.appendChild(bar);
     wrap.appendChild(col);
 
     const lc=document.createElement('div');
     lc.className='hcol'+(isNow?' now':'');
-    lc.innerHTML=`<span class="hr">${ampm}</span>`
+    lc.innerHTML=`<span class="hr">${label}</span>`
       + `<span class="mins vd">${shortMins(vd)}</span>`
       + `<span class="mins burn">${shortMins(burn)}</span>`;
     labels.appendChild(lc);
@@ -794,6 +844,17 @@ function buildControls(){
     b.onclick=()=>{state.spf=key; savePrefs(); buildControls(); render(); renderCurve();};
     pc.appendChild(b);
   });
+
+  // native dropdowns — the compact mobile mirror of the chip rows
+  const ss=$('skinSelect');
+  ss.innerHTML=Object.keys(SKIN).map(k=>`<option value="${k}">Type ${k} — ${SKIN[k].desc.split('—').pop().trim()}</option>`).join('');
+  ss.value=state.skin;
+  ss.onchange=()=>{state.skin=ss.value; savePrefs(); buildControls(); render(); renderCurve();};
+  const ps=$('spfSelect');
+  ps.innerHTML=SPF_LIST.map(({key})=>`<option value="${key}">${key==='None'?'None':'SPF '+key}</option>`).join('');
+  ps.value=state.spf;
+  ps.onchange=()=>{state.spf=ps.value; savePrefs(); buildControls(); render(); renderCurve();};
+
   $('skinHint').textContent = SKIN[state.skin].desc;
   const f=SPF[state.spf];
   if(f===1){
