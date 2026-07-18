@@ -801,7 +801,7 @@ function buildControls(){
   } else {
     const r=spfRange(f), e=effSPF();
     $('spfHint').innerHTML = `<b>A bottle labelled SPF ${state.spf} behaves like SPF ${r.lo.toFixed(0)}&ndash;${r.hi.toFixed(0)} in real life.</b> `
-      + `It only hits ${state.spf} at the lab thickness of 2 mg/cm&sup2;; use a lower label if you don't plan to reapply.`;
+      + `It only hits SPF ${state.spf} at the lab thickness of 2 mg/cm&sup2;; use a lower label if you don't plan to reapply.`;
   }
 }
 
