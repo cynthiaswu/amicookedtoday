@@ -1,0 +1,6 @@
+{
+  "name": "amicookedtoday-checks",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@shaderfrog/glsl-parser": "^7.0.1" }
+}

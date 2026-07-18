@@ -1,0 +1,39 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install check deps
+        run: npm install --prefix scripts --no-audit --no-fund
+
+      # A literal </script> in a comment truncates the app. Nothing throws.
+      - name: JS syntax and script-tag integrity
+        run: node scripts/check_js.mjs
+
+      # A bad shader edit ships as a blank sky, not an error.
+      - name: GLSL compiles
+        run: node scripts/check_shader.mjs
+
+      # The invisible fixes: ozone term, DST timezones, SPF key ordering.
+      - name: Regression checklist
+        run: python3 scripts/check_fixes.py
+
+      # The card sits on a live shader — contrast must hold at every sun angle.
+      - name: WCAG contrast at every solar elevation
+        run: python3 scripts/check_contrast.py

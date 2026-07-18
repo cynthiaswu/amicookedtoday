@@ -1,0 +1,17 @@
+[build]
+  publish = "."
+  command = ""
+
+# index.html is the whole app — never let a CDN pin a stale copy
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # the pin button needs this; without it the browser blocks geolocation
+    Permissions-Policy = "geolocation=(self)"

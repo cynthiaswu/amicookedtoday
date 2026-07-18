@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Today's UV, the minutes you need for vitamin D, and the minutes before you burn — for your skin, in your city.">
+<title>Am I Cooked Today?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Light glass by day, dark glass at night — the card follows the sun.
+     A single theme can't hold contrast across both a sunlit cloud and a night
+     sky without going opaque; adapting lets the glass stay genuinely sheer.
+     Both palettes verified to WCAG AA at their worst-case sky. */
+  :root{
+    --sky-fallback:#4E8AD8;
+    --glass:rgba(255,255,255,.62);
+    --glass-line:rgba(255,255,255,.55);
+    --ink:#16120D;                /* primary text */
+    --dim:#3B332A;                /* secondary   */
+    --muted:#4A4238;              /* labels      */
+    --good:#2C6410;
+    --burn:#A83410;
+    --accent:#0A6355;             /* text-safe accent, set by JS per band */
+    --accent-bright:#4FD8BE;      /* graphic accent — gauge arc, sun tint */
+    --accent-soft:rgba(10,99,85,.12);
+    --glow:rgba(10,99,85,.28);
+    --scrim:rgba(255,255,255,.42);
+    --shell:clamp(18px,4vw,26px);
+    --r:18px;
+    --mono:'DM Mono',ui-monospace,monospace;
+  }
+  [data-sky="night"]{
+    --track:rgba(255,255,255,.10);
+    --chip:rgba(255,255,255,.08);
+    --dropdown:#14101a;
+    --sky-fallback:#0B1020;
+    --glass:rgba(10,8,14,.52);
+    --glass-line:rgba(255,255,255,.16);
+    --ink:#FBF3E4;
+    --dim:#C9BDA9;
+    --muted:#C2B6A6;
+    --good:#8FD14F;
+    --burn:#FF7A52;
+    --accent-soft:rgba(79,216,190,.18);
+    --scrim:rgba(6,4,10,.55);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    background:var(--sky-fallback);
+    color:var(--ink);
+    min-height:100dvh;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+  a{color:var(--dim);text-underline-offset:2px}
+  a:hover{color:var(--ink)}
+
+  /* ---- the atmosphere: a real sun at its real elevation --------------- */
+  #sky{
+    position:fixed;inset:0;width:100%;height:100%;
+    display:block;z-index:0;pointer-events:none;
+    background:linear-gradient(180deg,#2E70CC,#6BA8E6);  /* pre-paint, no flash */
+  }
+  [data-sky="night"] body::before{
+    background:linear-gradient(180deg,rgba(6,4,10,.74),rgba(6,4,10,.28) 55%,transparent);
+  }
+  /* masthead sits directly on sky — this scrim buys it legible contrast */
+  body::before{
+    content:"";position:fixed;top:0;left:0;right:0;height:240px;z-index:1;
+    pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,.16) 55%,transparent);
+  }
+  /* grain sits over the shader to break up any residual banding */
+  body::after{
+    content:"";position:fixed;inset:0;z-index:1;pointer-events:none;
+    opacity:.055;mix-blend-mode:soft-light;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ---- page grid ------------------------------------------------------ */
+  body{display:grid;grid-template-rows:auto 1fr auto;position:relative}
+  body > *:not(#sky){position:relative;z-index:2}
+  header,main,body > footer{
+    width:100%;max-width:960px;margin:0 auto;padding-inline:var(--shell);
+  }
+
+  /* ---- masthead ------------------------------------------------------- */
+  header{
+    display:flex;align-items:flex-start;justify-content:space-between;
+    gap:18px;flex-wrap:wrap;padding-block:26px 20px;
+  }
+  header hgroup{min-width:0}
+  header h1{
+    font-family:'Anton',sans-serif;font-weight:400;
+    font-size:clamp(30px,6vw,42px);line-height:.92;
+    letter-spacing:.5px;text-transform:uppercase;
+  }
+  header h1 i{font-style:normal;color:var(--accent);transition:color 1.2s ease}
+  header p{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted);margin-top:7px;
+  }
+  #srcTag{
+    margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);opacity:.75;
+    display:flex;align-items:center;gap:6px;
+  }
+  #srcTag::before{
+    content:"";width:5px;height:5px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 8px var(--accent);
+  }
+
+  /* ---- location search ------------------------------------------------ */
+  search{position:relative;min-width:230px;flex:1;max-width:330px}
+  search form{
+    display:flex;align-items:center;gap:9px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0) 60%),
+      var(--glass);
+    border:1px solid var(--glass-line);
+    border-radius:13px;padding:9px 11px;
+    backdrop-filter:blur(12px) saturate(1.9);
+    -webkit-backdrop-filter:blur(12px) saturate(1.9);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.20), 0 6px 20px rgba(3,6,18,.28);
+    transition:border-color .25s;
+  }
+  search form:focus-within{border-color:var(--accent)}
+  search svg{width:15px;height:15px;flex:none;color:var(--accent);transition:color 1.2s ease}
+  #search{
+    flex:1;min-width:0;background:none;border:0;color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;font-size:13.5px;
+  }
+  #search::placeholder{color:var(--muted)}
+  #search:focus{outline:none}
+  #locateBtn{
+    background:none;border:0;cursor:pointer;color:var(--muted);
+    display:grid;place-items:center;width:26px;height:26px;
+    border-radius:7px;transition:color .2s,background .2s;
+  }
+  #locateBtn:hover{color:var(--accent);background:var(--accent-soft)}
+  #locateBtn svg{width:15px;height:15px;color:inherit}
+  #results{
+    position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;
+    background:var(--dropdown,#FFFFFF);border:1px solid var(--glass-line);
+    border-radius:11px;overflow:hidden;
+    box-shadow:0 18px 44px rgba(0,0,0,.55);
+  }
+  #results button{
+    display:block;width:100%;text-align:left;padding:10px 13px;
+    background:none;border:0;cursor:pointer;color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;font-size:13px;
+    border-bottom:1px solid rgba(251,243,228,.05);
+  }
+  #results button:last-child{border-bottom:0}
+  #results button:hover{background:var(--accent-soft)}
+  #results button span{color:var(--muted);font-size:12px}
+  #results .note{padding:12px 14px;color:var(--muted);font-size:13px}
+
+  /* ---- shared card idiom: glass over the live sky --------------------- */
+  /* Sheer glass — the sky is visible through it. Single layer: the adaptive
+     palette means no text wash is needed to hold contrast. */
+  .card{
+    position:relative;
+    background:
+      radial-gradient(130% 90% at 15% -12%, var(--scrim), transparent 60%),
+      var(--glass);
+    border:1px solid var(--glass-line);
+    border-radius:var(--r);
+    /* 12px, not 28: a heavy blur averages the leaves out of existence. Low
+       blur + high saturation reads as thick refractive glass, and lets the
+       canopy drift visibly behind. Contrast is unaffected — it was solved
+       against worst-case point colours, not the blurred average. */
+    backdrop-filter:blur(12px) saturate(1.9) brightness(1.04);
+    -webkit-backdrop-filter:blur(12px) saturate(1.9) brightness(1.04);
+    box-shadow:
+      0 14px 44px rgba(10,30,60,.18),
+      inset 0 1px 0 rgba(255,255,255,.55);
+  }
+  [data-sky="night"] .card{
+    box-shadow:
+      0 16px 50px rgba(3,6,18,.40),
+      inset 0 1px 0 rgba(255,255,255,.28);
+  }
+
+  #banner{
+    margin-bottom:16px;padding:11px 14px;border-radius:10px;
+    background:rgba(255,255,255,.66);border:1px solid var(--burn);
+    color:var(--burn);font-size:12.5px;display:none;
+    backdrop-filter:blur(12px) saturate(1.6);
+  }
+  #banner:not(:empty){display:block}
+
+  #app{padding-bottom:8px;transition:opacity .3s}
+  #app.loading{opacity:.4;pointer-events:none}
+
+  /* ---- hero ----------------------------------------------------------- */
+  #hero{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+    gap:16px;margin-bottom:16px;
+  }
+  #gauge-card{
+    padding:22px 20px 20px;text-align:center;
+    display:flex;flex-direction:column;align-items:center;
+  }
+  #gauge-card figure{position:relative;width:100%;max-width:300px}
+  #gaugeSvg{width:100%;display:block;overflow:visible}
+  #gauge-card figcaption{
+    position:absolute;top:56%;left:0;right:0;
+    transform:translateY(-50%);pointer-events:none;
+  }
+  #uvNum{
+    display:block;
+    font-family:'Anton',sans-serif;
+    font-size:clamp(52px,13vw,74px);line-height:.8;
+    color:var(--ink);letter-spacing:1px;
+    font-variant-numeric:tabular-nums;
+  }
+  #gauge-card figcaption small{
+    display:block;font-family:var(--mono);font-size:10px;
+    letter-spacing:.22em;color:var(--muted);margin-top:8px;
+  }
+  #verdict{
+    font-family:'Anton',sans-serif;font-size:clamp(19px,3.6vw,25px);
+    text-transform:uppercase;letter-spacing:.5px;
+    color:var(--accent);transition:color 1.2s ease;margin-top:4px;
+  }
+  #verdictSub{font-size:12.5px;color:var(--muted);margin-top:5px;max-width:34ch}
+  #peakNote{
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);margin-top:9px;line-height:1.7;
+  }
+  #peakNote b{color:var(--ink);font-weight:500}
+
+  #hero > div{display:flex;flex-direction:column;gap:14px;min-width:0}
+  #hero #stats{margin-top:auto}
+
+  /* ---- sun window ----------------------------------------------------- */
+  .eyebrow{
+    font-family:var(--mono);font-size:10px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--muted);
+  }
+
+  /* ---- stats ---------------------------------------------------------- */
+  #stats{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  #stats > div{padding:15px 16px}
+  #stats dt{
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:8px;
+  }
+  #stats dd{
+    font-family:'Anton',sans-serif;font-size:clamp(22px,4.4vw,29px);
+    line-height:1;letter-spacing:.5px;
+  }
+  #vdVal{color:var(--good)}
+  #burnVal{color:var(--burn)}
+  #stats p{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.45}
+
+  /* ---- controls ------------------------------------------------------- */
+  /* controls now sit in the hero's right column — stack them so the chip rows
+     get full width instead of wrapping into three cramped lines */
+  #controls{
+    display:grid;grid-template-columns:1fr;gap:14px;
+  }
+  /* fieldset ships two defaults that break modern layout:
+     - an implicit min-inline-size:min-content that overrides 1fr and overflows
+     - a <legend> rendered into the border box, where margin-bottom is ignored
+     float+clear puts the legend back into normal flow. */
+  #controls fieldset{border:0;padding:16px 18px;min-inline-size:0}
+  #controls legend{
+    float:left;width:100%;padding:0;margin:0 0 11px;
+    font-family:var(--mono);font-size:10px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  #controls legend + *{clear:left}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    background:var(--chip,rgba(255,255,255,.42));
+    border:1px solid var(--glass-line);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5);
+    color:var(--dim);border-radius:11px;padding:7px 11px;
+    font-family:'Space Grotesk',sans-serif;font-size:12.5px;
+    cursor:pointer;transition:all .18s;
+    display:flex;flex-direction:column;align-items:center;gap:3px;min-width:44px;
+  }
+  .chip:hover{border-color:var(--dim);color:var(--ink)}
+  .chip.on{
+    background:var(--accent-soft);border-color:var(--accent);color:var(--ink);
+  }
+  .swatch{width:22px;height:22px;border-radius:50%;border:1px solid rgba(0,0,0,.25)}
+  .skin-hint{margin-top:11px;font-size:12.5px;color:var(--muted);min-height:16px;line-height:1.5}
+  .skin-hint b{color:var(--ink);font-weight:500}
+
+  /* ---- the curve ------------------------------------------------------ */
+  #hours{padding:18px;margin-bottom:16px}
+  #hours > header{
+    display:flex;justify-content:space-between;align-items:baseline;
+    gap:10px;flex-wrap:wrap;max-width:none;padding:0;margin:0;
+  }
+  #curveLegend{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:.8}
+  .curve-key{display:flex;gap:14px;margin-top:8px}
+  .curve-key span{
+    display:flex;align-items:center;gap:5px;
+    font-family:var(--mono);font-size:10px;color:var(--muted);
+  }
+  .curve-key i{width:8px;height:8px;border-radius:2px;display:inline-block}
+  .curve-key i.vd{background:var(--good)}
+  .curve-key i.burn{background:var(--burn)}
+
+  .chart{display:flex;gap:8px;margin-top:12px}
+  #yaxis{width:22px;height:132px;position:relative;flex:none}
+  .ytick{
+    position:absolute;right:0;transform:translateY(-50%);
+    font-family:var(--mono);font-size:9px;color:var(--muted);opacity:.7;
+  }
+  .plot{flex:1;min-width:0;position:relative}
+  #grid{position:absolute;left:0;right:0;top:0;height:132px;pointer-events:none}
+  .gline{position:absolute;left:0;right:0;height:1px;background:var(--track,rgba(20,30,50,.12))}
+  .gline.base{background:var(--muted);opacity:.4}
+  #curve{display:flex;align-items:flex-end;gap:3px;height:132px;position:relative}
+  .col{
+    flex:1;display:flex;flex-direction:column;align-items:center;
+    height:100%;justify-content:flex-end;min-width:0;
+  }
+  .barfill{
+    width:100%;max-width:16px;border-radius:4px 4px 0 0;
+    transition:height .6s ease;min-height:2px;
+  }
+  .col.now .barfill{outline:2px solid var(--ink);outline-offset:1px}
+  #hlabels{display:flex;gap:3px;margin-top:5px}
+  .hcol{flex:1;text-align:center;min-width:0}
+  .hcol .hr{
+    font-family:var(--mono);font-size:9px;color:var(--muted);
+    white-space:nowrap;display:block;
+  }
+  .hcol .mins{font-family:var(--mono);font-size:9px;white-space:nowrap;display:block;margin-top:2px}
+  .hcol .mins.vd{color:var(--good);opacity:.85}
+  .hcol .mins.burn{color:var(--burn);opacity:.85}
+  .hcol.now{
+    background:none;                 /* was a filled block — read as an opaque patch */
+    box-shadow:inset 0 2px 0 var(--accent);
+    border-radius:4px;padding-top:3px;
+  }
+  .hcol.now .hr{color:var(--accent);font-weight:500}
+  .hcol.now .mins{opacity:1;font-weight:500}
+  .ylabel{
+    display:block;margin-top:10px;
+    font-family:var(--mono);font-size:9px;color:var(--muted);
+    opacity:.6;letter-spacing:.04em;
+  }
+  .per-day{
+    margin-top:10px;font-size:12px;line-height:1.6;color:var(--dim);
+  }
+  .per-day b{color:var(--ink);font-weight:500}
+  .per-day i{font-style:italic}
+  .per-day .g{color:var(--good)}
+  .per-day .b{color:var(--burn)}
+
+  /* ---- about ---------------------------------------------------------- */
+  body > footer{padding-block:0 44px}
+  body > footer > div{
+    padding:18px 20px;font-size:12.5px;color:var(--muted);line-height:1.65;
+  }
+  body > footer b{color:var(--dim);font-weight:500}
+
+  /* ---- responsive ----------------------------------------------------- */
+  @media (max-width:760px){
+    #hero{grid-template-columns:1fr}
+    header{padding-block:20px 16px}
+    search{max-width:none}
+  }
+  @media (max-width:420px){
+    #stats{grid-template-columns:1fr}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition-duration:.001ms!important;animation-duration:.001ms!important}
+  }
+</style>
+</head>
+
+<body>
+<canvas id="sky" aria-hidden="true"></canvas>
+
+<header>
+  <hgroup>
+    <h1>Am I Cooked<i>?</i></h1>
+    <p id="today">TODAY · —</p>
+  </hgroup>
+
+  <search>
+    <form role="search" onsubmit="return false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <input id="search" type="search" placeholder="Finding you…" autocomplete="off" spellcheck="false" aria-label="Search for a city">
+      <button id="locateBtn" type="button" title="Use my location" aria-label="Use my location">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
+    </form>
+    <div id="results" role="listbox" aria-label="City results" style="display:none"></div>
+  </search>
+</header>
+
+<main>
+  <p id="banner" role="status"></p>
+
+  <div id="app">
+    <section id="hero" aria-label="Today's reading">
+      <article id="gauge-card" class="card">
+        <figure>
+          <svg id="gaugeSvg" viewBox="0 0 200 150" role="img" aria-label="Dial showing today's peak UV index"></svg>
+          <figcaption>
+            <strong id="uvNum">—</strong>
+            <small>UV RIGHT NOW</small>
+          </figcaption>
+        </figure>
+        <h2 id="verdict">Reading the sky…</h2>
+        <p id="verdictSub"></p>
+        <p id="peakNote"></p>
+      </article>
+
+      <div>
+        <section id="controls">
+          <fieldset class="card">
+            <legend>Your skin type</legend>
+            <div class="chips" id="skinChips" role="radiogroup" aria-label="Your skin type"></div>
+            <p class="skin-hint" id="skinHint"></p>
+          </fieldset>
+          <fieldset class="card">
+            <legend>Sunscreen on</legend>
+            <div class="chips" id="spfChips" role="radiogroup" aria-label="Sunscreen SPF"></div>
+            <p class="skin-hint" id="spfHint"></p>
+          </fieldset>
+        </section>
+
+        <dl id="stats">
+          <div class="card">
+            <dt>☀️ Vitamin D in</dt>
+            <dd id="vdVal">—</dd>
+          </div>
+          <div class="card">
+            <dt>🔥 Cooked in</dt>
+            <dd id="burnVal">—</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+
+    <figure id="hours" class="card">
+      <header>
+        <span class="eyebrow">Today's UV curve</span>
+        <span id="curveLegend">skin type II · unprotected</span>
+      </header>
+      <div class="curve-key">
+        <span><i class="vd"></i>vitamin D floor</span>
+        <span><i class="burn"></i>burn ceiling</span>
+      </div>
+      <div class="chart">
+        <div id="yaxis"></div>
+        <div class="plot">
+          <div id="grid"></div>
+          <div id="curve"></div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="ylabel">↑ bar height = UV index (erythemal, WHO scale)</span>
+        <p class="per-day">
+          <b>These are whole-day totals, not per-hour allowances.</b> Each pair answers one question:
+          <i>if you went out at this hour and stayed out, how long until you've earned the day's
+          vitamin D <span class="g">(green)</span>, and how long until you burn <span class="b">(red)</span>?</i>
+          UV dose accumulates across the whole day — 15 minutes at noon and 15 more at 1pm is
+          30 minutes of dose, not two fresh budgets. Spend it once.
+        </p>
+      </figcaption>
+    </figure>
+  </div>
+</main>
+
+<footer>
+  <div class="card">
+    <b>How this works.</b> Vitamin D time uses the maintenance-dose method from Kift &amp; Webb (2024), <a href="https://doi.org/10.3390/nu16101489" target="_blank" rel="noopener">Nutrients 16:1489</a> — the short, sub-burn exposure that keeps your vitamin D topped up, scaled by skin type (types V and VI need 2.5× and 4× longer) and the live UV index. Cooked time estimates sunburn from your skin's minimal erythemal dose and the current UV. This is a friendly guide, not medical advice.
+    <br><br>
+    <b>Where the UV comes from.</b> Live readings come from the <a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener">Open-Meteo Forecast API</a>, whose <code>uv_index</code> is derived from NOAA's GFS model and updates every six hours. It's the erythemal (sunburn-weighted) UV index on the standard WHO 0–11+ scale, and it accounts for real cloud cover and ozone. If that feed can't be reached, the page falls back to a model computed in your browser: solar geometry for the sun's angle, the van Heuklon (1979) ozone climatology for absorption, and a background turbidity factor. Checked against NOAA/EPA's published city forecasts it lands within about a point.
+    <br><br>
+    <b>The sky above is real.</b> The sun in the background sits at its actual computed elevation for the city you're looking at, right now, and takes its colour from the current UV band. It's drawn from the same solar geometry that drives the fallback model — so when the sun is low on your screen, the numbers are low for the same reason.
+
+  </div>
+</footer>
+
+<script>
+/* ---------- data ---------- */
+const SKIN = {
+  I:  {med:200, vd:36,  swatch:'#f7ddc6', desc:'Type I — always burns, never tans'},
+  II: {med:250, vd:36,  swatch:'#eec8a6', desc:'Type II — burns easily, tans a little'},
+  III:{med:350, vd:36,  swatch:'#d9a878', desc:'Type III — sometimes burns, tans evenly'},
+  IV: {med:450, vd:36,  swatch:'#b9814f', desc:'Type IV — rarely burns, tans easily'},
+  V:  {med:600, vd:90,  swatch:'#8a5a30', desc:'Type V — deeply pigmented. Burns rarely, but does burn.'},
+  VI: {med:1000,vd:144, swatch:'#5a3a20', desc:'Type VI — richly pigmented. Melanin buys you ~4× the time, not immunity.'},
+};
+const SPF_LIST = [
+  {key:'None', f:1},   {key:'15', f:15}, {key:'30', f:30}, {key:'40', f:40},
+  {key:'50',   f:50},  {key:'70', f:70}, {key:'100', f:100},
+];
+const SPF = Object.fromEntries(SPF_LIST.map(o=>[o.key,o.f]));
+// Faurschou & Wulf 2007: SPF falls to the square root at 1 mg/cm2, the fourth
+// root at 0.5. Real-world application is ~0.4-1.0. 'real' uses the 1 mg/cm2 case.
+function effSPF(){
+  const f = SPF[state.spf];
+  return f===1 ? 1 : Math.sqrt(f);
+}
+function spfRange(f){
+  if(f===1) return null;
+  return {lo: Math.pow(f,0.25), hi: 1 + (f-1)*0.5};  // exponential @0.5 .. linear @1.0
+}
+
+const BANDS = [
+  {max:2.99, name:'Stone cold',        col:'#4FD8BE', ink:'#0A6355', sub:'Barely any UV. You could sit out all day and stay raw.'},
+  {max:5.99, name:'Warming up',        col:'#F5B942', ink:'#7E5200', sub:'Moderate sun. A hat and some shade around midday and you\'re golden.'},
+  {max:7.99, name:'Getting toasty',    col:'#FFA05C', ink:'#8F430C', sub:'High UV. Seek shade at midday and reapply if you linger.'},
+  {max:10.99,name:'Well done',         col:'#FF7A52', ink:'#A83410', sub:'Very high UV. Cover up — skin cooks fast out here.'},
+  {max:99,   name:'Absolutely cooked', col:'#FF5C86', ink:'#9C0F3E', sub:'Extreme UV. Honestly? Stay inside and admire it through glass.'},
+];
+
+let state = {lat:null, lon:null, place:'', uv:0, uvMax:0, hourly:[], nowHour:null,
+  skin:'II', spf:'None', live:false, uvCeil:null, uvCeilNow:null, sunMu:0.3};
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
+function band(uv){ return BANDS.find(b=>uv<=b.max) || BANDS[BANDS.length-1]; }
+function fmtMin(m){
+  if(m===Infinity || m>1440) return '∞';
+  if(m>=240) return (m/60).toFixed(1).replace('.0','')+'<small> hr</small>';
+  return Math.round(m)+'<small> min</small>';
+}
+function setBanner(msg){ const b=$('banner'); if(!msg){b.classList.remove('show');return;} b.textContent=msg; b.classList.add('show'); }
+
+/* ---------- accent theming ---------- */
+function smooth(e0,e1,x){ const t=clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
+function applySkyTheme(mu){
+  const night = mu < 0.08;
+  const root = document.documentElement;
+  root.dataset.sky = night ? 'night' : 'day';
+  const a = night ? 0.66 + (0.34-0.66)*smooth(0.08,-0.14,mu)
+                  : 0.63 + (0.48-0.63)*smooth(0.08, 0.38,mu);
+  root.style.setProperty('--glass',
+    night ? `rgba(10,8,14,${a.toFixed(3)})` : `rgba(255,255,255,${a.toFixed(3)})`);
+}
+function applyAccent(uv){
+  const b = band(uv);
+  const night = document.documentElement.dataset.sky === 'night';
+  // bright colour for graphics (gauge arc, sun tint); dark ink for text on
+  // light glass — the same teal that glows on the sky is unreadable on white.
+  const text = night ? b.col : (b.ink || b.col);
+  document.documentElement.style.setProperty('--accent', text);
+  document.documentElement.style.setProperty('--accent-bright', b.col);
+  document.documentElement.style.setProperty('--accent-soft', hexToRgba(text,.14));
+  document.documentElement.style.setProperty('--glow', hexToRgba(b.col,.34));
+}
+function hexToRgba(hex,a){
+  const n=parseInt(hex.slice(1),16);
+  return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;
+}
+
+/* ---------- gauge ---------- */
+// The gauge is drawn in JS, so it can't inherit the CSS theme flip — these
+// are its theme-aware inks. The arc is a UI component carrying meaning, so it
+// uses the text-safe band colour on light glass (>=3:1), not the sky-bright one.
+function gaugeInk(){
+  const night = document.documentElement.dataset.sky === 'night';
+  return night
+    ? {track:'rgba(251,243,228,0.10)', dot:'#FBF3E4', tick:'rgba(251,243,228,.48)'}
+    : {track:'rgba(18,28,48,0.13)',    dot:'#16120D', tick:'rgba(22,18,13,.60)'};
+}
+// bright on the sky, dark on light glass
+function bandInk(uv){
+  const b = band(uv);
+  return document.documentElement.dataset.sky === 'night' ? b.col : (b.ink || b.col);
+}
+function gaugeTop(){ const m=Math.max(state.uv,state.uvMax); return m>12 ? (m>16?20:16) : 12; }
+function drawGauge(uv){
+  const svg=$('gaugeSvg'); svg.innerHTML='';
+  const cx=100, cy=110, r=78;
+  const start=-220, end=40;                 // sweep across top
+  const TOP=gaugeTop();
+  const frac=clamp(uv/TOP,0,1);
+  const NS='http://www.w3.org/2000/svg';
+  const pol=(ang)=>{const a=ang*Math.PI/180;return [cx+r*Math.cos(a), cy+r*Math.sin(a)];};
+  const arc=(a0,a1,color,w,op)=>{
+    const [x0,y0]=pol(a0),[x1,y1]=pol(a1);
+    const large = Math.abs(a1-a0)>180?1:0;
+    const p=document.createElementNS(NS,'path');
+    p.setAttribute('d',`M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`);
+    p.setAttribute('fill','none'); p.setAttribute('stroke',color);
+    p.setAttribute('stroke-width',w); p.setAttribute('stroke-linecap','round');
+    if(op!=null)p.setAttribute('opacity',op);
+    svg.appendChild(p);
+  };
+  // track
+  arc(start,end,gaugeInk().track,13);
+  // gradient-ish fill via segments
+  const segs=48, cur=bandInk(uv);
+  for(let i=0;i<segs;i++){
+    const f0=i/segs, f1=(i+1)/segs;
+    if(f0>frac) break;
+    const a0=start+(end-start)*f0, a1=start+(end-start)*Math.min(f1,frac);
+    const uvAt=f0*TOP;
+    arc(a0,a1,bandInk(uvAt),13,0.55+0.45*(f0/Math.max(frac,.001)));
+  }
+  // needle dot at value
+  const [nx,ny]=pol(start+(end-start)*frac);
+  const dot=document.createElementNS(NS,'circle');
+  dot.setAttribute('cx',nx);dot.setAttribute('cy',ny);dot.setAttribute('r',7);
+  dot.setAttribute('fill',gaugeInk().dot);dot.setAttribute('stroke',cur);dot.setAttribute('stroke-width',3);
+  svg.appendChild(dot);
+  const tickStep = TOP>12 ? 4 : 2;
+  for(let v=0;v<=TOP;v+=tickStep){
+    const [ix,iy]=pol0(cx,cy,r+13,start+(end-start)*(v/TOP));
+    const t=document.createElementNS(NS,'text');
+    t.setAttribute('x',ix);t.setAttribute('y',iy+3);t.setAttribute('text-anchor','middle');
+    t.setAttribute('fill',gaugeInk().tick);t.setAttribute('font-size','9');
+    t.setAttribute('font-family','DM Mono, monospace');t.textContent=v;
+    svg.appendChild(t);
+  }
+}
+function pol0(cx,cy,r,ang){const a=ang*Math.PI/180;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+
+/* ---------- core render ---------- */
+function render(){
+  const now = state.uv;                // headline = the UV right now
+  const uv  = state.uvMax;             // dose math still uses today's peak (the honest ceiling)
+  const sk = SKIN[state.skin];
+  const eff = effSPF();
+  // The card follows the sun. Opacity is adaptive too: the glass only needs to
+  // be thick through twilight, when the sky is mid-toned and neither palette has
+  // much headroom. At high noon and deep night it can be far sheerer. Every
+  // value below is the verified minimum for WCAG AA at that elevation, + margin.
+  applySkyTheme(state.sunMu);
+  applyAccent(now);
+  drawGauge(now);
+  Sky.set({ mu: state.sunMu, accent: band(now).col, live: state.live });
+
+  $('uvNum').textContent = now.toFixed(1);
+  const bd = band(now);
+  $('verdict').textContent = bd.name;
+  $('verdictSub').textContent = bd.sub;
+  let note = `right now &middot; peaks at <b>${uv.toFixed(1)}</b> today`;
+  if(state.live && state.uvCeilNow != null && state.uvCeilNow - now >= 0.5){
+    note += ` &middot; cloud is taking <b>${(state.uvCeilNow-now).toFixed(1)}</b> off right now`;
+  } else if(!state.live){
+    note += ` &middot; <b>clear-sky ceiling</b> — cloud not counted`;
+  }
+  $('peakNote').innerHTML = note;
+
+  // Vitamin D needs UVB on bare skin — so sunscreen scales this too.
+  const vdBare = uv < 1 ? Infinity : sk.vd / uv;
+  const vd = vdBare===Infinity ? Infinity : vdBare * eff;
+  const burn = uv < 0.3 ? Infinity : (sk.med / (uv*1.5)) * eff;
+
+  const vdBlocked = vd!==Infinity && vd > 240;
+  $('vdVal').innerHTML = vd===Infinity ? 'Not today' : vdBlocked ? '4 hr+' : fmtMin(vd);
+
+  $('burnVal').innerHTML = burn===Infinity ? 'No risk' : fmtMin(burn);
+
+}
+
+/* ---------- hourly curve ---------- */
+// minutes of unprotected sun before erythema (sunburn) at a given UV
+function burnMinsAt(uv){
+  if(uv < 0.3) return Infinity;
+  return (SKIN[state.skin].med / (uv*1.5)) * effSPF();
+}
+// minutes of bare skin to earn the day's WHOLE vitamin D maintenance dose at a given UV
+function vdMinsAt(uv){
+  if(uv < 1) return null;   // below UVI ~1-2 synthesis is negligible — the paper's "Vitamin D Winter"
+  const m = (SKIN[state.skin].vd / uv) * effSPF();
+  return m > 240 ? null : m;   // past 4h the estimate stops being useful, not because it stops
+}
+function shortMins(m){
+  if(m===null) return '—';
+  if(m===Infinity) return 'safe';
+  if(m>=600) return '10h+';
+  if(m>=90) return Math.round(m/60*10)/10+'h';
+  return Math.round(m)+'m';
+}
+
+function renderCurve(){
+  const wrap=$('curve'), grid=$('grid'), yax=$('yaxis');
+  wrap.innerHTML=''; grid.innerHTML=''; yax.innerHTML='';
+  let labels=$('hlabels');
+  if(!labels){
+    labels=document.createElement('div');
+    labels.id='hlabels'; labels.className='hlabels';
+    wrap.parentNode.appendChild(labels);
+  }
+  labels.innerHTML='';
+  if(!state.hourly.length) return;
+
+  const pts = state.hourly.filter(h=>h.hour>=6 && h.hour<=20);
+  const peak = Math.max(...pts.map(h=>h.uv), 1);
+
+  // fixed, honest y scale — round up to a clean even number, never below 4
+  let top = Math.max(4, Math.ceil(peak));
+  if(top % 2) top += 1;
+  const step = top <= 4 ? 1 : top <= 12 ? 2 : 3;
+
+  for(let v=0; v<=top; v+=step){
+    const t=document.createElement('div');
+    t.className='ytick'; t.textContent=v;
+    t.style.top=(132 - 132*(v/top))+'px';
+    yax.appendChild(t);
+    const g=document.createElement('div');
+    g.className='gline'+(v===0?' base':'');
+    g.style.top=(132 - 132*(v/top))+'px';
+    grid.appendChild(g);
+  }
+
+  pts.forEach(h=>{
+    const isNow = h.hour===state.nowHour;
+    const vd = vdMinsAt(h.uv), burn = burnMinsAt(h.uv);
+    const ampm = h.hour===0?'12a':h.hour<12?h.hour+'a':h.hour===12?'12p':(h.hour-12)+'p';
+
+    const col=document.createElement('div');
+    col.className='col'+(isNow?' now':'');
+    const bar=document.createElement('div');
+    bar.className='barfill';
+    bar.style.height=(clamp(h.uv/top,0,1)*100)+'%';
+    bar.style.background=bandInk(h.uv);
+    bar.title = `${ampm} — UV ${h.uv.toFixed(1)}\n`
+      + `Sit out at ${ampm} and it takes ${shortMins(vd)} to earn your whole day's vitamin D,\n`
+      + `and ${shortMins(burn)} before you burn. Both are whole-day figures, not per-hour allowances.`;
+    col.appendChild(bar);
+    wrap.appendChild(col);
+
+    const lc=document.createElement('div');
+    lc.className='hcol'+(isNow?' now':'');
+    lc.innerHTML=`<span class="hr">${ampm}</span>`
+      + `<span class="mins vd">${shortMins(vd)}</span>`
+      + `<span class="mins burn">${shortMins(burn)}</span>`;
+    labels.appendChild(lc);
+  });
+
+  $('curveLegend').textContent = `skin type ${state.skin}`
+    + (state.spf!=='None' ? ` · SPF ${state.spf}` : ' · unprotected');
+}
+
+/* ---------- controls ---------- */
+function buildControls(){
+  const sc=$('skinChips'); sc.innerHTML='';
+  Object.keys(SKIN).forEach(k=>{
+    const b=document.createElement('button');
+    b.className='chip'+(k===state.skin?' on':'');
+    b.type='button'; b.setAttribute('role','radio');
+    b.setAttribute('aria-checked', k===state.skin ? 'true':'false');
+    b.setAttribute('aria-label','Skin type '+k);
+    b.innerHTML=`<span class="swatch" style="background:${SKIN[k].swatch}"></span>${k}`;
+    b.onclick=()=>{state.skin=k; savePrefs(); buildControls(); $('skinHint').textContent=SKIN[k].desc; render(); renderCurve();};
+    sc.appendChild(b);
+  });
+  const pc=$('spfChips'); pc.innerHTML='';
+  SPF_LIST.forEach(({key})=>{                    // explicit order — None first
+    const b=document.createElement('button');
+    b.className='chip'+(key===state.spf?' on':'');
+    b.type='button'; b.setAttribute('role','radio');
+    b.setAttribute('aria-checked', key===state.spf ? 'true':'false');
+    b.textContent = key==='None'?'None':'SPF '+key;
+    b.onclick=()=>{state.spf=key; savePrefs(); buildControls(); render(); renderCurve();};
+    pc.appendChild(b);
+  });
+  $('skinHint').textContent = SKIN[state.skin].desc;
+  const f=SPF[state.spf];
+  if(f===1){
+    $('spfHint').textContent = 'Bare skin. Nothing between you and the UV.';
+  } else {
+    const r=spfRange(f), e=effSPF();
+    $('spfHint').innerHTML = `<b>A bottle labelled SPF ${state.spf} behaves like about SPF ${e.toFixed(0)} in real life.</b> `
+      + `It only hits ${state.spf} at the lab thickness of 2 mg/cm&sup2;; spread as thinly as people actually spread it, `
+      + `estimates land somewhere in SPF ${r.lo.toFixed(0)}&ndash;${r.hi.toFixed(0)}. Use a lower label if you don't plan to reapply.`;
+  }
+}
+
+/* ---------- bundled city list (works with zero network) ---------- */
+const CITY_RAW = `
+San Francisco|California|US|37.7749|-122.4194|America/Los_Angeles
+Los Angeles|California|US|34.0522|-118.2437|America/Los_Angeles
+San Diego|California|US|32.7157|-117.1611|America/Los_Angeles
+San Jose|California|US|37.3382|-121.8863|America/Los_Angeles
+Sacramento|California|US|38.5816|-121.4944|America/Los_Angeles
+Oakland|California|US|37.8044|-122.2712|America/Los_Angeles
+Fresno|California|US|36.7378|-119.7871|America/Los_Angeles
+Long Beach|California|US|33.7701|-118.1937|America/Los_Angeles
+Santa Monica|California|US|34.0195|-118.4912|America/Los_Angeles
+Berkeley|California|US|37.8715|-122.2730|America/Los_Angeles
+Palo Alto|California|US|37.4419|-122.1430|America/Los_Angeles
+Santa Cruz|California|US|36.9741|-122.0308|America/Los_Angeles
+New York|New York|US|40.7128|-74.0060|America/New_York
+Brooklyn|New York|US|40.6782|-73.9442|America/New_York
+Buffalo|New York|US|42.8864|-78.8784|America/New_York
+Chicago|Illinois|US|41.8781|-87.6298|America/Chicago
+Houston|Texas|US|29.7604|-95.3698|America/Chicago
+Austin|Texas|US|30.2672|-97.7431|America/Chicago
+Dallas|Texas|US|32.7767|-96.7970|America/Chicago
+San Antonio|Texas|US|29.4241|-98.4936|America/Chicago
+El Paso|Texas|US|31.7619|-106.4850|America/Denver
+Phoenix|Arizona|US|33.4484|-112.0740|America/Phoenix
+Tucson|Arizona|US|32.2226|-110.9747|America/Phoenix
+Philadelphia|Pennsylvania|US|39.9526|-75.1652|America/New_York
+Pittsburgh|Pennsylvania|US|40.4406|-79.9959|America/New_York
+Seattle|Washington|US|47.6062|-122.3321|America/Los_Angeles
+Spokane|Washington|US|47.6588|-117.4260|America/Los_Angeles
+Portland|Oregon|US|45.5152|-122.6784|America/Los_Angeles
+Eugene|Oregon|US|44.0521|-123.0868|America/Los_Angeles
+Denver|Colorado|US|39.7392|-104.9903|America/Denver
+Boulder|Colorado|US|40.0150|-105.2705|America/Denver
+Boston|Massachusetts|US|42.3601|-71.0589|America/New_York
+Miami|Florida|US|25.7617|-80.1918|America/New_York
+Orlando|Florida|US|28.5383|-81.3792|America/New_York
+Tampa|Florida|US|27.9506|-82.4572|America/New_York
+Jacksonville|Florida|US|30.3322|-81.6557|America/New_York
+Key West|Florida|US|24.5551|-81.7800|America/New_York
+Atlanta|Georgia|US|33.7490|-84.3880|America/New_York
+Detroit|Michigan|US|42.3314|-83.0458|America/Detroit
+Minneapolis|Minnesota|US|44.9778|-93.2650|America/Chicago
+Las Vegas|Nevada|US|36.1699|-115.1398|America/Los_Angeles
+Reno|Nevada|US|39.5296|-119.8138|America/Los_Angeles
+Salt Lake City|Utah|US|40.7608|-111.8910|America/Denver
+Albuquerque|New Mexico|US|35.0844|-106.6504|America/Denver
+Santa Fe|New Mexico|US|35.6870|-105.9378|America/Denver
+Nashville|Tennessee|US|36.1627|-86.7816|America/Chicago
+Memphis|Tennessee|US|35.1495|-90.0490|America/Chicago
+New Orleans|Louisiana|US|29.9511|-90.0715|America/Chicago
+Charlotte|North Carolina|US|35.2271|-80.8431|America/New_York
+Raleigh|North Carolina|US|35.7796|-78.6382|America/New_York
+Charleston|South Carolina|US|32.7765|-79.9311|America/New_York
+Washington|District of Columbia|US|38.9072|-77.0369|America/New_York
+Baltimore|Maryland|US|39.2904|-76.6122|America/New_York
+Cleveland|Ohio|US|41.4993|-81.6944|America/New_York
+Columbus|Ohio|US|39.9612|-82.9988|America/New_York
+Indianapolis|Indiana|US|39.7684|-86.1581|America/Indiana/Indianapolis
+Kansas City|Missouri|US|39.0997|-94.5786|America/Chicago
+St. Louis|Missouri|US|38.6270|-90.1994|America/Chicago
+Milwaukee|Wisconsin|US|43.0389|-87.9065|America/Chicago
+Omaha|Nebraska|US|41.2565|-95.9345|America/Chicago
+Oklahoma City|Oklahoma|US|35.4676|-97.5164|America/Chicago
+Anchorage|Alaska|US|61.2181|-149.9003|America/Anchorage
+Honolulu|Hawaii|US|21.3069|-157.8583|Pacific/Honolulu
+Boise|Idaho|US|43.6150|-116.2023|America/Boise
+Toronto|Ontario|CA|43.6532|-79.3832|America/Toronto
+Vancouver|British Columbia|CA|49.2827|-123.1207|America/Vancouver
+Montreal|Quebec|CA|45.5017|-73.5673|America/Toronto
+Calgary|Alberta|CA|51.0447|-114.0719|America/Edmonton
+Ottawa|Ontario|CA|45.4215|-75.6972|America/Toronto
+Mexico City||MX|19.4326|-99.1332|America/Mexico_City
+Guadalajara||MX|20.6597|-103.3496|America/Mexico_City
+Cancun||MX|21.1619|-86.8515|America/Cancun
+Tijuana||MX|32.5149|-117.0382|America/Tijuana
+Monterrey||MX|25.6866|-100.3161|America/Monterrey
+Guatemala City||GT|14.6349|-90.5069|America/Guatemala
+San Jose||CR|9.9281|-84.0907|America/Costa_Rica
+Panama City||PA|8.9824|-79.5199|America/Panama
+Havana||CU|23.1136|-82.3666|America/Havana
+Kingston||JM|17.9714|-76.7936|America/Jamaica
+San Juan||PR|18.4655|-66.1057|America/Puerto_Rico
+Bogota||CO|4.7110|-74.0721|America/Bogota
+Medellin||CO|6.2442|-75.5812|America/Bogota
+Lima||PE|-12.0464|-77.0428|America/Lima
+Quito||EC|-0.1807|-78.4678|America/Guayaquil
+La Paz||BO|-16.4897|-68.1193|America/La_Paz
+Santiago||CL|-33.4489|-70.6693|America/Santiago
+Buenos Aires||AR|-34.6037|-58.3816|America/Argentina/Buenos_Aires
+Montevideo||UY|-34.9011|-56.1645|America/Montevideo
+Sao Paulo||BR|-23.5505|-46.6333|America/Sao_Paulo
+Rio de Janeiro||BR|-22.9068|-43.1729|America/Sao_Paulo
+Brasilia||BR|-15.8267|-47.9218|America/Sao_Paulo
+Salvador||BR|-12.9777|-38.5016|America/Bahia
+Manaus||BR|-3.1190|-60.0217|America/Manaus
+Caracas||VE|10.4806|-66.9036|America/Caracas
+London|England|GB|51.5074|-0.1278|Europe/London
+Manchester|England|GB|53.4808|-2.2426|Europe/London
+Birmingham|England|GB|52.4862|-1.8904|Europe/London
+Liverpool|England|GB|53.4084|-2.9916|Europe/London
+Bristol|England|GB|51.4545|-2.5879|Europe/London
+Leeds|England|GB|53.8008|-1.5491|Europe/London
+Glasgow|Scotland|GB|55.8642|-4.2518|Europe/London
+Edinburgh|Scotland|GB|55.9533|-3.1883|Europe/London
+Cardiff|Wales|GB|51.4816|-3.1791|Europe/London
+Belfast|Northern Ireland|GB|54.5973|-5.9301|Europe/London
+Dublin||IE|53.3498|-6.2603|Europe/Dublin
+Paris||FR|48.8566|2.3522|Europe/Paris
+Marseille||FR|43.2965|5.3698|Europe/Paris
+Lyon||FR|45.7640|4.8357|Europe/Paris
+Nice||FR|43.7102|7.2620|Europe/Paris
+Bordeaux||FR|44.8378|-0.5792|Europe/Paris
+Madrid||ES|40.4168|-3.7038|Europe/Madrid
+Barcelona||ES|41.3874|2.1686|Europe/Madrid
+Valencia||ES|39.4699|-0.3763|Europe/Madrid
+Seville||ES|37.3891|-5.9845|Europe/Madrid
+Malaga||ES|36.7213|-4.4214|Europe/Madrid
+Palma||ES|39.5696|2.6502|Europe/Madrid
+Lisbon||PT|38.7223|-9.1393|Europe/Lisbon
+Porto||PT|41.1579|-8.6291|Europe/Lisbon
+Rome||IT|41.9028|12.4964|Europe/Rome
+Milan||IT|45.4642|9.1900|Europe/Rome
+Naples||IT|40.8518|14.2681|Europe/Rome
+Florence||IT|43.7696|11.2558|Europe/Rome
+Venice||IT|45.4408|12.3155|Europe/Rome
+Palermo||IT|38.1157|13.3615|Europe/Rome
+Berlin||DE|52.5200|13.4050|Europe/Berlin
+Munich||DE|48.1351|11.5820|Europe/Berlin
+Hamburg||DE|53.5511|9.9937|Europe/Berlin
+Frankfurt||DE|50.1109|8.6821|Europe/Berlin
+Cologne||DE|50.9375|6.9603|Europe/Berlin
+Amsterdam||NL|52.3676|4.9041|Europe/Amsterdam
+Rotterdam||NL|51.9244|4.4777|Europe/Amsterdam
+Brussels||BE|50.8503|4.3517|Europe/Brussels
+Zurich||CH|47.3769|8.5417|Europe/Zurich
+Geneva||CH|46.2044|6.1432|Europe/Zurich
+Vienna||AT|48.2082|16.3738|Europe/Vienna
+Prague||CZ|50.0755|14.4378|Europe/Prague
+Warsaw||PL|52.2297|21.0122|Europe/Warsaw
+Krakow||PL|50.0647|19.9450|Europe/Warsaw
+Budapest||HU|47.4979|19.0402|Europe/Budapest
+Bucharest||RO|44.4268|26.1025|Europe/Bucharest
+Sofia||BG|42.6977|23.3219|Europe/Sofia
+Athens||GR|37.9838|23.7275|Europe/Athens
+Thessaloniki||GR|40.6401|22.9444|Europe/Athens
+Istanbul||TR|41.0082|28.9784|Europe/Istanbul
+Ankara||TR|39.9334|32.8597|Europe/Istanbul
+Antalya||TR|36.8969|30.7133|Europe/Istanbul
+Copenhagen||DK|55.6761|12.5683|Europe/Copenhagen
+Stockholm||SE|59.3293|18.0686|Europe/Stockholm
+Gothenburg||SE|57.7089|11.9746|Europe/Stockholm
+Oslo||NO|59.9139|10.7522|Europe/Oslo
+Bergen||NO|60.3913|5.3221|Europe/Oslo
+Tromso||NO|69.6492|18.9553|Europe/Oslo
+Helsinki||FI|60.1699|24.9384|Europe/Helsinki
+Reykjavik||IS|64.1466|-21.9426|Atlantic/Reykjavik
+Moscow||RU|55.7558|37.6173|Europe/Moscow
+St Petersburg||RU|59.9311|30.3609|Europe/Moscow
+Kyiv||UA|50.4501|30.5234|Europe/Kyiv
+Zagreb||HR|45.8150|15.9819|Europe/Zagreb
+Split||HR|43.5081|16.4402|Europe/Zagreb
+Ljubljana||SI|46.0569|14.5058|Europe/Ljubljana
+Belgrade||RS|44.7866|20.4489|Europe/Belgrade
+Cairo||EG|30.0444|31.2357|Africa/Cairo
+Alexandria||EG|31.2001|29.9187|Africa/Cairo
+Casablanca||MA|33.5731|-7.5898|Africa/Casablanca
+Marrakesh||MA|31.6295|-7.9811|Africa/Casablanca
+Tunis||TN|36.8065|10.1815|Africa/Tunis
+Algiers||DZ|36.7538|3.0588|Africa/Algiers
+Lagos||NG|6.5244|3.3792|Africa/Lagos
+Abuja||NG|9.0765|7.3986|Africa/Lagos
+Accra||GH|5.6037|-0.1870|Africa/Accra
+Dakar||SN|14.7167|-17.4677|Africa/Dakar
+Nairobi||KE|-1.2921|36.8219|Africa/Nairobi
+Addis Ababa||ET|9.0320|38.7469|Africa/Addis_Ababa
+Kampala||UG|0.3476|32.5825|Africa/Kampala
+Dar es Salaam||TZ|-6.7924|39.2083|Africa/Dar_es_Salaam
+Kinshasa||CD|-4.4419|15.2663|Africa/Kinshasa
+Luanda||AO|-8.8390|13.2894|Africa/Luanda
+Johannesburg||ZA|-26.2041|28.0473|Africa/Johannesburg
+Cape Town||ZA|-33.9249|18.4241|Africa/Johannesburg
+Durban||ZA|-29.8587|31.0218|Africa/Johannesburg
+Pretoria||ZA|-25.7479|28.2293|Africa/Johannesburg
+Harare||ZW|-17.8252|31.0335|Africa/Harare
+Dubai||AE|25.2048|55.2708|Asia/Dubai
+Abu Dhabi||AE|24.4539|54.3773|Asia/Dubai
+Doha||QA|25.2854|51.5310|Asia/Qatar
+Riyadh||SA|24.7136|46.6753|Asia/Riyadh
+Jeddah||SA|21.4858|39.1925|Asia/Riyadh
+Kuwait City||KW|29.3759|47.9774|Asia/Kuwait
+Muscat||OM|23.5880|58.3829|Asia/Muscat
+Manama||BH|26.2285|50.5860|Asia/Bahrain
+Tel Aviv||IL|32.0853|34.7818|Asia/Jerusalem
+Jerusalem||IL|31.7683|35.2137|Asia/Jerusalem
+Amman||JO|31.9454|35.9284|Asia/Amman
+Beirut||LB|33.8938|35.5018|Asia/Beirut
+Baghdad||IQ|33.3152|44.3661|Asia/Baghdad
+Tehran||IR|35.6892|51.3890|Asia/Tehran
+Karachi||PK|24.8607|67.0011|Asia/Karachi
+Lahore||PK|31.5204|74.3587|Asia/Karachi
+Islamabad||PK|33.6844|73.0479|Asia/Karachi
+Delhi||IN|28.7041|77.1025|Asia/Kolkata
+Mumbai||IN|19.0760|72.8777|Asia/Kolkata
+Bangalore||IN|12.9716|77.5946|Asia/Kolkata
+Chennai||IN|13.0827|80.2707|Asia/Kolkata
+Kolkata||IN|22.5726|88.3639|Asia/Kolkata
+Hyderabad||IN|17.3850|78.4867|Asia/Kolkata
+Pune||IN|18.5204|73.8567|Asia/Kolkata
+Jaipur||IN|26.9124|75.7873|Asia/Kolkata
+Goa||IN|15.2993|74.1240|Asia/Kolkata
+Colombo||LK|6.9271|79.8612|Asia/Colombo
+Kathmandu||NP|27.7172|85.3240|Asia/Kathmandu
+Dhaka||BD|23.8103|90.4125|Asia/Dhaka
+Bangkok||TH|13.7563|100.5018|Asia/Bangkok
+Chiang Mai||TH|18.7883|98.9853|Asia/Bangkok
+Phuket||TH|7.8804|98.3923|Asia/Bangkok
+Hanoi||VN|21.0285|105.8542|Asia/Ho_Chi_Minh
+Ho Chi Minh City||VN|10.8231|106.6297|Asia/Ho_Chi_Minh
+Phnom Penh||KH|11.5564|104.9282|Asia/Phnom_Penh
+Singapore||SG|1.3521|103.8198|Asia/Singapore
+Kuala Lumpur||MY|3.1390|101.6869|Asia/Kuala_Lumpur
+Jakarta||ID|-6.2088|106.8456|Asia/Jakarta
+Bali||ID|-8.3405|115.0920|Asia/Makassar
+Manila||PH|14.5995|120.9842|Asia/Manila
+Cebu||PH|10.3157|123.8854|Asia/Manila
+Hong Kong||HK|22.3193|114.1694|Asia/Hong_Kong
+Taipei||TW|25.0330|121.5654|Asia/Taipei
+Shanghai||CN|31.2304|121.4737|Asia/Shanghai
+Beijing||CN|39.9042|116.4074|Asia/Shanghai
+Guangzhou||CN|23.1291|113.2644|Asia/Shanghai
+Shenzhen||CN|22.5431|114.0579|Asia/Shanghai
+Chengdu||CN|30.5728|104.0668|Asia/Shanghai
+Seoul||KR|37.5665|126.9780|Asia/Seoul
+Busan||KR|35.1796|129.0756|Asia/Seoul
+Tokyo||JP|35.6762|139.6503|Asia/Tokyo
+Osaka||JP|34.6937|135.5023|Asia/Tokyo
+Kyoto||JP|35.0116|135.7681|Asia/Tokyo
+Sapporo||JP|43.0618|141.3545|Asia/Tokyo
+Okinawa||JP|26.2124|127.6809|Asia/Tokyo
+Ulaanbaatar||MN|47.8864|106.9057|Asia/Ulaanbaatar
+Almaty||KZ|43.2220|76.8512|Asia/Almaty
+Tashkent||UZ|41.2995|69.2401|Asia/Tashkent
+Sydney||AU|-33.8688|151.2093|Australia/Sydney
+Melbourne||AU|-37.8136|144.9631|Australia/Melbourne
+Brisbane||AU|-27.4698|153.0251|Australia/Brisbane
+Perth||AU|-31.9505|115.8605|Australia/Perth
+Adelaide||AU|-34.9285|138.6007|Australia/Adelaide
+Darwin||AU|-12.4634|130.8456|Australia/Darwin
+Cairns||AU|-16.9186|145.7781|Australia/Brisbane
+Hobart||AU|-42.8821|147.3272|Australia/Hobart
+Canberra||AU|-35.2809|149.1300|Australia/Sydney
+Auckland||NZ|-36.8485|174.7633|Pacific/Auckland
+Wellington||NZ|-41.2866|174.7756|Pacific/Auckland
+Christchurch||NZ|-43.5321|172.6362|Pacific/Auckland
+Queenstown||NZ|-45.0312|168.6626|Pacific/Auckland
+Suva||FJ|-18.1416|178.4419|Pacific/Fiji
+Honiara||SB|-9.4456|159.9729|Pacific/Guadalcanal
+Port Moresby||PG|-9.4438|147.1803|Pacific/Port_Moresby
+Papeete||PF|-17.5516|-149.5585|Pacific/Tahiti
+`;
+const CITIES = CITY_RAW.trim().split('\n').map(l=>{
+  const [name,admin,country,lat,lon,tz]=l.split('|');
+  return {name, admin, country, lat:+lat, lon:+lon, tz};
+});
+
+/* ---------- clear-sky UV model (no network needed) ---------- */
+// UVI = 12.5 · cos(SZA)^2.42 · (ozone/300)^-1.23 · aerosol
+// The bare cos-power term alone is a zero-aerosol, 300 DU ceiling and runs ~3 points
+// hot at mid-latitudes. Adding an ozone climatology and a turbidity factor brings mean
+// error against NOAA/EPA's city forecasts from 3.0 down to ~1.2.
+const RAD = Math.PI/180;
+function dayOfYear(d){
+  return Math.floor((d - new Date(d.getFullYear(),0,0)) / 86400000);
+}
+// van Heuklon (1979) total column ozone climatology
+function ozoneDU(lat, lon, n){
+  let t, b;
+  if(lat >= 0){ t = 150 + 40*Math.sin(RAD*0.9865*(n-30))  + 20*Math.sin(RAD*3*lon); b = 1.28; }
+  else        { t = 100 + 30*Math.sin(RAD*0.9865*(n-152)) + 20*Math.sin(RAD*3*lon); b = 1.50; }
+  const du = 235 + t * Math.pow(Math.sin(RAD*b*lat), 2);
+  // guard rail: the -1.23 exponent over-amplifies below ~290 DU
+  return Math.max(du, 290);
+}
+const AEROSOL = 0.92;   // background turbidity — clear sky is not clean sky
+function modelUVI(lat, lon, date, tzOffsetHrs, clockHour){
+  const n = dayOfYear(date);
+  const decl = 23.44*RAD * Math.sin(2*Math.PI*(284+n)/365);
+  const solarTime = clockHour + (lon/15) - tzOffsetHrs;
+  const ha = (solarTime - 12) * 15 * RAD;
+  const la = lat*RAD;
+  const mu = Math.sin(la)*Math.sin(decl) + Math.cos(la)*Math.cos(decl)*Math.cos(ha);
+  if(mu <= 0.02) return 0;
+  const uvi = 12.5 * Math.pow(mu, 2.42)
+            * Math.pow(ozoneDU(lat, lon, n)/300, -1.23)
+            * AEROSOL;
+  return Math.round(uvi * 10)/10;
+}
+// Real UTC offset for an IANA zone on a given date. Intl carries the tz database,
+// so this handles DST automatically — round(lon/15) does not, which put San Francisco
+// an hour early all summer.
+function tzOffsetHours(tz, date){
+  if(!tz) return null;
+  try{
+    const s = new Intl.DateTimeFormat('en-US',{timeZone:tz, timeZoneName:'longOffset'}).format(date);
+    const m = s.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+    if(!m) return 0;                       // bare "GMT" = UTC+0
+    const sign = m[1]==='-' ? -1 : 1;
+    return sign * (parseInt(m[2],10) + (m[3] ? parseInt(m[3],10)/60 : 0));
+  }catch(e){ return null; }                // unknown zone -> caller falls back
+}
+function tzGuess(lon){ return Math.round(lon/15); }   // last resort only
+
+// cos(solar zenith) — the same term the UV model uses, exposed so the sky can
+// draw the sun where it actually is.
+function sunMu(lat, lon, date, tzOff, clockHour){
+  const n = dayOfYear(date);
+  const decl = 23.44*RAD * Math.sin(2*Math.PI*(284+n)/365);
+  const solarTime = clockHour + (lon/15) - tzOff;
+  const ha = (solarTime - 12) * 15 * RAD;
+  const la = lat*RAD;
+  return Math.sin(la)*Math.sin(decl) + Math.cos(la)*Math.cos(decl)*Math.cos(ha);
+}
+function sunNow(lat, lon, tz){
+  const now = new Date();
+  const off = tzOffsetHours(tz, now);
+  const tzOff = off===null ? tzGuess(lon) : off;
+  const utcHour = now.getUTCHours() + now.getUTCMinutes()/60;
+  const localNow = ((utcHour + tzOff) % 24 + 24) % 24;
+  return sunMu(lat, lon, now, tzOff, localNow);
+}
+
+function modelDay(lat, lon, tz){
+  const now = new Date();
+  const off = tzOffsetHours(tz, now);
+  const tzOff = off===null ? tzGuess(lon) : off;
+  const utcHour = now.getUTCHours() + now.getUTCMinutes()/60;
+  const localNow = ((utcHour + tzOff) % 24 + 24) % 24;
+  const hourly = [];
+  for(let h=0; h<24; h++) hourly.push({hour:h, uv:modelUVI(lat,lon,now,tzOff,h)});
+  return {
+    hourly,
+    nowHour: Math.round(localNow) % 24,   // nearest bar, not the one we're past
+    uv: modelUVI(lat,lon,now,tzOff,localNow),
+    uvMax: Math.max(...hourly.map(h=>h.uv)),
+    tzOff
+  };
+}
+
+/* ---------- fetch with timeout ---------- */
+async function tfetch(url, ms){
+  const ctl = new AbortController();
+  const t = setTimeout(()=>ctl.abort(), ms||6000);
+  try{ return await fetch(url, {signal:ctl.signal}); }
+  finally{ clearTimeout(t); }
+}
+
+/* ---------- load a place: model first, upgrade to live if reachable ---------- */
+// The live feed usually answers in ~200-400ms. Painting the modeled numbers
+// first and correcting them makes the dial visibly jump — so they're computed
+// immediately but held behind a short grace timer. Fast connections go straight
+// to live and never see the modeled state; slow or offline ones still get a
+// working page rather than a spinner. Progressive enhancement, minus the flash.
+const GRACE_MS = 450;
+
+async function loadPlace(lat, lon, label, tz){
+  $('app').classList.add('loading');
+  state.lat=lat; state.lon=lon; state.place=label;
+  state.sunMu = sunNow(lat, lon, tz);
+  $('search').value = label;
+  $('today').textContent = 'TODAY · ' + label.toUpperCase();
+  setBanner('');
+
+  // Solar geometry needs no network, so the sky can start moving to the new
+  // location immediately — it eases across while the numbers resolve.
+  applySkyTheme(state.sunMu);
+  Sky.set({ mu: state.sunMu });
+
+  const m = modelDay(lat, lon, tz);          // computed now, painted only if needed
+  let painted = false;
+  function paintModeled(reason){
+    if(painted) return;
+    painted = true;
+    state.uv=m.uv; state.uvMax=m.uvMax; state.hourly=m.hourly; state.nowHour=m.nowHour;
+    state.live=false; state.uvCeil=null; state.uvCeilNow=null;
+    setSource(reason);
+    render(); renderCurve();
+    $('app').classList.remove('loading');
+  }
+  const grace = setTimeout(()=>paintModeled('modeled · clear sky, no clouds'), GRACE_MS);
+
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
+      `&current=uv_index&hourly=uv_index,uv_index_clear_sky`+
+      `&daily=uv_index_max,uv_index_clear_sky_max&timezone=auto&forecast_days=1`;
+    const r = await tfetch(url, 6000);
+    if(!r.ok) throw new Error('uv');
+    const d = await r.json();
+    clearTimeout(grace);
+
+    const times=d.hourly.time, uvs=d.hourly.uv_index, cs=d.hourly.uv_index_clear_sky||[];
+    state.hourly = times.map((t,i)=>({
+      hour:parseInt(t.slice(11,13),10),
+      uv:Math.max(uvs[i]||0,0),
+      clear:Math.max(cs[i]||0,0),          // what this hour would be with no cloud
+    }));
+    if(d.current?.time){                    // round to the nearest hour, not truncate
+      const hh = parseInt(d.current.time.slice(11,13),10);
+      const mm = parseInt(d.current.time.slice(14,16),10) || 0;
+      state.nowHour = (hh + (mm >= 30 ? 1 : 0)) % 24;
+    }
+    let cur = d.current?.uv_index;
+    if(cur==null){ const h=state.hourly.find(x=>x.hour===state.nowHour); cur = h?h.uv:m.uv; }
+    state.uv = Math.max(cur,0);
+    state.uvMax = d.daily?.uv_index_max?.[0] ?? m.uvMax;
+    state.uvCeil = d.daily?.uv_index_clear_sky_max?.[0] ?? null;   // today's clear-sky PEAK
+    // The cloud delta must compare like with like. uvCeil is a daily maximum;
+    // subtracting the current UV from it measures mostly the sun having set,
+    // not cloud. Compare this hour's actual against this hour's clear sky.
+    const hNow = state.hourly.find(h => h.hour === state.nowHour);
+    state.uvCeilNow = hNow ? hNow.clear : null;
+    state.live = true;
+    painted = true;
+    setSource('live · real cloud cover');
+    render(); renderCurve();
+    $('app').classList.remove('loading');
+  }catch(e){
+    clearTimeout(grace);
+    // never leave the page empty — modeled is a working answer, just a ceiling
+    paintModeled('modeled · clear sky — live feed unreachable');
+  }
+}
+
+/* ---------- source label ---------- */
+function setSource(txt){
+  let el = $('srcTag');
+  if(!el){
+    el = document.createElement('div');
+    el.id='srcTag'; el.className='src-tag';
+    $('today').parentNode.appendChild(el);
+  }
+  el.textContent = txt;
+}
+
+/* ---------- IP geolocation (best effort) ---------- */
+async function ipLocate(){
+  const tries=[
+    {u:'https://ipwho.is/', pick:d=>d&&d.success!==false?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone&&d.timezone.id}:null},
+    {u:'https://ipapi.co/json/', pick:d=>d&&!d.error?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone}:null},
+    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone}:null},
+  ];
+  for(const t of tries){
+    try{
+      const r=await tfetch(t.u, 4000); if(!r.ok) continue;
+      const d=await r.json(); const g=t.pick(d);
+      if(g && g.lat!=null && !isNaN(+g.lat)){
+        const label=[g.city,g.region||g.country].filter(Boolean).join(', ') || 'Your location';
+        await loadPlace(+g.lat,+g.lon,label,g.tz);
+        return true;
+      }
+    }catch(e){/* try next */}
+  }
+  return false;
+}
+
+/* ---------- search: local list first, network as a bonus ---------- */
+function localMatches(q){
+  const s=q.toLowerCase();
+  const starts=[], has=[];
+  for(const c of CITIES){
+    const n=c.name.toLowerCase();
+    if(n.startsWith(s)) starts.push(c);
+    else if(n.includes(s) || (c.admin&&c.admin.toLowerCase().startsWith(s))) has.push(c);
+    if(starts.length>=8) break;
+  }
+  return starts.concat(has).slice(0,6);
+}
+function renderResults(list){
+  const res=$('results');
+  res.innerHTML='';
+  if(!list.length){
+    res.innerHTML='<div class="note">No match. Try a nearby bigger city.</div>';
+    return;
+  }
+  list.forEach(p=>{
+    const b=document.createElement('button');
+    const region=[p.admin,p.country].filter(Boolean).join(', ');
+    b.innerHTML=`${p.name} <span>· ${region}</span>`;
+    b.onclick=()=>{
+      $('results').style.display='none';
+      loadPlace(p.lat, p.lon, `${p.name}, ${p.admin||p.country}`, p.tz);
+    };
+    res.appendChild(b);
+  });
+}
+async function search(q){
+  const res=$('results');
+  res.style.display='block';
+  const local = localMatches(q);
+  renderResults(local);                 // instant — always something
+  // try to enrich with the online geocoder for places not in the list
+  try{
+    const r=await tfetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`, 4000);
+    if(!r.ok) return;
+    const d=await r.json();
+    if(!d.results||!d.results.length) return;
+    const remote = d.results.map(p=>({name:p.name, admin:p.admin1||'', country:p.country_code||p.country||'', lat:p.latitude, lon:p.longitude, tz:p.timezone}));
+    // merge, dedupe by name+country, local first
+    const seen=new Set(local.map(c=>c.name+c.country));
+    const merged = local.concat(remote.filter(c=>{
+      const k=c.name+c.country; if(seen.has(k))return false; seen.add(k); return true;
+    })).slice(0,6);
+    if($('results').style.display!=='none' && $('search').value.trim()===q) renderResults(merged);
+  }catch(e){/* local results already shown */}
+}
+
+/* ---------- wiring ---------- */
+function initEvents(){
+  const input=$('search'), res=$('results');
+  let timer;
+  input.addEventListener('input',()=>{
+    clearTimeout(timer);
+    const q=input.value.trim();
+    if(q.length<2){res.style.display='none';return;}
+    timer=setTimeout(()=>search(q),180);
+  });
+  input.addEventListener('focus',()=>{
+    const q=input.value.trim();
+    if(q.length>=2) search(q);
+  });
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      clearTimeout(timer);
+      const q=input.value.trim();
+      if(q.length<2) return;
+      const m=localMatches(q);
+      if(m.length){ res.style.display='none'; loadPlace(m[0].lat,m[0].lon,`${m[0].name}, ${m[0].admin||m[0].country}`, m[0].tz); }
+      else search(q);
+    }
+  });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.loc')) res.style.display='none';
+  });
+  $('locateBtn').addEventListener('click',()=>{
+    res.style.display='none';
+    $('search').placeholder='Finding you…';
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(
+        pos=>loadPlace(pos.coords.latitude,pos.coords.longitude,'My location',Intl.DateTimeFormat().resolvedOptions().timeZone),
+        async()=>{
+          const ok=await ipLocate();
+          if(!ok) setBanner('Couldn\'t pin you down. Type a city above.');
+        },
+        {timeout:8000, maximumAge:600000}
+      );
+    } else {
+      ipLocate().then(ok=>{ if(!ok) setBanner('Couldn\'t pin you down. Type a city above.'); });
+    }
+  });
+}
+
+/* ---------- boot ---------- */
+
+
+/* ---------- preferences: remember skin type + SPF ---------------------------
+   Stored in localStorage (a static page has no server to send a cookie to).
+   Wrapped in try/catch because private-mode Safari throws on write. */
+const PREFS_KEY = 'aic:prefs:v1';
+function loadPrefs(){
+  try{
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    if(p.skin && SKIN[p.skin]) state.skin = p.skin;
+    if(p.spf && SPF[p.spf] !== undefined) state.spf = p.spf;
+  }catch(e){/* storage blocked — fall back to defaults */}
+}
+function savePrefs(){
+  try{
+    localStorage.setItem(PREFS_KEY, JSON.stringify({skin:state.skin, spf:state.spf}));
+  }catch(e){/* ignore quota / private mode */}
+}
+
+(async function(){
+  loadPrefs();
+  buildControls();
+  initEvents();
+  $('search').placeholder='Finding you…';
+  const ok = await ipLocate();
+  if(!ok){
+    $('search').placeholder='Type a city…';
+    await loadPlace(37.7749,-122.4194,'San Francisco, California','America/Los_Angeles');
+    setBanner('Couldn\'t auto-detect you here — showing San Francisco. Tap the pin or search a city.');
+  }
+})();
+
+/* ---------- atmosphere ----------------------------------------------------
+   Lying in the grass, looking up. One fullscreen fragment shader — no
+   Three.js, because a sky is one quad and this page's whole point is that
+   it works with no network.
+
+   The sun is not decoration: it sits at the solar elevation computed from
+   the same geometry that drives the UV model. Low sun on screen and a low
+   number in the dial are the same fact, drawn twice.
+   ------------------------------------------------------------------------ */
+const Sky = (() => {
+  const canvas = document.getElementById('sky');
+  const FALLBACK = 'linear-gradient(180deg,#2E70CC 0%,#5596DD 55%,#6BA8E6 100%)';
+  const gl = canvas && canvas.getContext('webgl', {
+    alpha:false, antialias:false, depth:false, stencil:false,
+    powerPreference:'low-power', failIfMajorPerformanceCaveat:false,
+  });
+  if(!gl){ if(canvas) canvas.style.background = FALLBACK; return { set(){} }; }
+
+  const VS = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const FS = `precision highp float;
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uMu;
+uniform vec3  uAccent;
+
+float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1.0,0.0)),f.x),
+             mix(hash(i+vec2(0.0,1.0)),hash(i+vec2(1.0,1.0)),f.x), f.y);
+}
+float fbm(vec2 p){
+  float v=0.0, a=0.5;
+  for(int i=0;i<3;i++){ v+=a*noise(p); p*=2.06; a*=0.5; }
+  return v;
+}
+mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+float cloud(vec2 p, float cover){
+  float w = fbm(p);
+  float d = fbm(p + vec2(w,w*0.7)*0.62);
+  return smoothstep(cover, cover+0.26, d);
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  float aspect = uRes.x/uRes.y;
+  float t = uTime;
+
+  float day  = smoothstep(-0.18, 0.22, uMu);
+  float dusk = smoothstep(0.34,-0.06,uMu) * smoothstep(-0.30,0.04,uMu);
+
+  // sky: looking straight up — top is zenith, bottom falls toward horizon
+  float h = clamp(uv.y, 0.0, 1.0);
+  vec3 zen = mix(vec3(0.012,0.028,0.085), vec3(0.16,0.44,0.80), day);
+  vec3 hor = mix(vec3(0.05,0.075,0.16),  vec3(0.42,0.66,0.90), day);
+  vec3 col = mix(hor, zen, pow(h,0.85));
+
+  // sun at its real elevation
+  float sunY = 0.08 + clamp(uMu,-0.30,1.0)*0.82;
+  vec2  sunP = vec2(0.5, sunY);
+  vec2  sd   = (uv - sunP)*vec2(aspect,1.0);
+  float sr   = length(sd);
+  vec2  sunDir = normalize(sd + vec2(1e-5));
+
+  col = mix(col, vec3(0.98,0.44,0.18), dusk*exp(-sr*1.6)*0.75);
+  vec3 sunTint = mix(uAccent, vec3(1.0,0.97,0.90), 0.5);
+  col += sunTint * exp(-sr*3.0) * 0.42 * day;
+  col += vec3(1.0,0.985,0.94) * exp(-sr*sr/0.0011) * day;
+
+  // far cloud deck — cheap, slow
+  vec2 pf = uv*vec2(aspect,1.0)*2.2 + vec2(t*0.006, 0.0);
+  float df = smoothstep(0.48,0.78, fbm(pf)) * 0.55;
+  col = mix(col, mix(vec3(0.55,0.60,0.72), vec3(0.99,0.99,1.0), day), df*0.5*(0.35+0.65*day));
+
+  // near deck — warped, self-shadowed, parallax
+  vec2 pn = uv*vec2(aspect,1.0)*3.6 + vec2(t*0.016, t*0.002);
+  float dn  = cloud(pn, 0.50);
+  float ds  = cloud(pn - sunDir*0.28, 0.50);
+  float lit = clamp((dn-ds)*2.2 + 0.58, 0.0, 1.0);
+  vec3 cc = mix(vec3(0.38,0.42,0.55), vec3(1.0,0.99,0.96), lit);
+  cc = mix(cc*0.30, cc, day);
+  cc += sunTint * exp(-sr*2.2) * 0.30 * day * (1.0-lit);
+  col = mix(col, cc, dn*0.88);
+
+  // canopy overhead, swaying
+  float sway = sin(t*0.5)*0.5 + sin(t*0.83+1.7)*0.5;
+  vec2  cv = uv;
+  cv.x += sway*0.013*(1.0-uv.y);
+  float e1 = fbm(cv*6.5 + vec2(t*0.05,0.0))*0.26;
+  float m1 = smoothstep(0.44,0.30, length((cv-vec2(-0.02,1.06))*vec2(0.95,1.35)) - e1);
+  float e2 = fbm(cv*5.5 + vec2(19.0 - t*0.04,3.0))*0.28;
+  float m2 = smoothstep(0.42,0.28, length((cv-vec2(1.03,1.09))*vec2(0.88,1.45)) - e2);
+  float cnp = clamp(m1+m2, 0.0, 1.0);
+  float back = exp(-sr*1.9);
+  vec3 leaf = mix(vec3(0.035,0.085,0.028), vec3(0.30,0.58,0.12), back*0.85+0.12);
+  col = mix(col, mix(leaf*0.18, leaf, day), cnp);
+
+  // leaves adrift
+  for(int i=0;i<9;i++){
+    float fi = float(i);
+    float sp = 0.03 + hash(vec2(fi,1.0))*0.055;
+    float lx = fract(hash(vec2(fi,3.0)) + t*sp*0.5);
+    float ly = fract(hash(vec2(fi,2.0)) - t*sp*0.16);
+    vec2 lp = (uv - vec2(lx,ly))*vec2(aspect,1.0);
+    lp = rot(t*(0.5+hash(vec2(fi,4.0))) + fi)*lp;
+    float lm = smoothstep(0.034,0.017, length(lp*vec2(1.0,2.6)));
+    vec3 lc = mix(vec3(0.13,0.30,0.07), vec3(0.45,0.68,0.18), 0.4+0.6*back);
+    col = mix(col, mix(lc*0.2, lc, day), lm*0.80);
+  }
+
+  float vig = smoothstep(1.45,0.35, length((uv-0.5)*vec2(aspect,1.0)));
+  col *= mix(0.72,1.0,vig);
+  col += (hash(gl_FragCoord.xy + fract(t)) - 0.5)*0.012;
+  gl_FragColor = vec4(col,1.0);
+}`;
+
+  function compile(type, src){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+      console.warn('sky shader:', gl.getShaderInfoLog(sh)); return null;
+    }
+    return sh;
+  }
+  const vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, FS);
+  if(!vs || !fs){ canvas.style.background = FALLBACK; return { set(){} }; }
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.warn('sky link:', gl.getProgramInfoLog(prog));
+    canvas.style.background = FALLBACK; return { set(){} };
+  }
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog,'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {
+    res:gl.getUniformLocation(prog,'uRes'),   time:gl.getUniformLocation(prog,'uTime'),
+    mu:gl.getUniformLocation(prog,'uMu'),     accent:gl.getUniformLocation(prog,'uAccent'),
+  };
+
+  // Clouds are soft, so the buffer is capped hard rather than tracking DPR.
+  // This bounds fragment cost on a 4K panel to the same as a laptop.
+  const MAX_DIM = 900;
+  let W=0, H=0;
+  function resize(){
+    const cw = innerWidth, ch = innerHeight;
+    const k = Math.min(1, MAX_DIM/Math.max(cw,ch));
+    const w = Math.max(1, Math.round(cw*k)), h = Math.max(1, Math.round(ch*k));
+    if(w===W && h===H) return;
+    W = canvas.width = w; H = canvas.height = h;
+    gl.viewport(0,0,W,H);
+  }
+  new ResizeObserver(resize).observe(document.documentElement);
+  resize();
+
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let mu = 0.35, target = 0.35, accent = [0.96,0.73,0.26];
+  let raf = 0, running = true, t0 = performance.now();
+
+  function hexToRgb(h){
+    h = String(h).trim().replace('#','');
+    if(h.length===3) h = h.split('').map(c=>c+c).join('');
+    const n = parseInt(h,16);
+    return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255];
+  }
+
+  function frame(now){
+    if(!running) return;
+    raf = requestAnimationFrame(frame);
+    resize();
+    mu += (target - mu) * 0.045;
+    gl.uniform2f(U.res, W, H);
+    gl.uniform1f(U.time, REDUCED ? 8.0 : (now - t0)/1000);
+    gl.uniform1f(U.mu, mu);
+    gl.uniform3f(U.accent, accent[0], accent[1], accent[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  document.addEventListener('visibilitychange', ()=>{
+    running = !document.hidden;
+    if(running){ t0 = performance.now() - 8000; raf = requestAnimationFrame(frame); }
+    else cancelAnimationFrame(raf);
+  });
+  canvas.addEventListener('webglcontextlost', e=>{ e.preventDefault(); running=false; });
+  canvas.addEventListener('webglcontextrestored', ()=>{ running=true; raf=requestAnimationFrame(frame); });
+  raf = requestAnimationFrame(frame);
+
+  return {
+    set(s){
+      if(typeof s.mu === 'number' && !isNaN(s.mu)) target = Math.max(-0.4, Math.min(1, s.mu));
+      if(s.accent) accent = hexToRgb(s.accent);
+    }
+  };
+})();
+</script>
+</body>
+</html>
