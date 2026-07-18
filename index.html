@@ -450,12 +450,12 @@
       <div>
         <section id="controls">
           <fieldset class="card">
-            <legend>Your skin type</legend>
+            <legend>Choose your skin type</legend>
             <div class="chips" id="skinChips" role="radiogroup" aria-label="Your skin type"></div>
             <p class="skin-hint" id="skinHint"></p>
           </fieldset>
           <fieldset class="card">
-            <legend>Sunscreen on</legend>
+            <legend>Choose your sunscreen</legend>
             <div class="chips" id="spfChips" role="radiogroup" aria-label="Sunscreen SPF"></div>
             <p class="skin-hint" id="spfHint"></p>
           </fieldset>
@@ -478,7 +478,7 @@
     <figure id="hours" class="card">
       <header>
         <span class="eyebrow">Today's UV curve</span>
-        <span id="curveLegend">skin type III · unprotected</span>
+        <span id="curveLegend">skin type 3 · unprotected</span>
       </header>
       <div class="curve-key">
         <span><i class="vd"></i>vitamin D floor</span>
@@ -517,12 +517,12 @@
 <script>
 /* ---------- data ---------- */
 const SKIN = {
-  I:  {med:200, vd:36,  swatch:'#f7ddc6', desc:'Type I — always burns, never tans'},
-  II: {med:250, vd:36,  swatch:'#eec8a6', desc:'Type II — burns easily, tans a little'},
-  III:{med:350, vd:36,  swatch:'#d9a878', desc:'Type III — sometimes burns, tans evenly'},
-  IV: {med:450, vd:36,  swatch:'#b9814f', desc:'Type IV — rarely burns, tans easily'},
-  V:  {med:600, vd:90,  swatch:'#8a5a30', desc:'Type V — deeply pigmented. Burns rarely, but does burn.'},
-  VI: {med:1000,vd:144, swatch:'#5a3a20', desc:'Type VI — richly pigmented. Melanin buys you ~4× the time, not immunity.'},
+  1:  {med:200, vd:36,  swatch:'#f7ddc6', desc:'Type 1 — always burns, never tans'},
+  2: {med:250, vd:36,  swatch:'#eec8a6', desc:'Type 2 — burns easily, tans a little'},
+  3:{med:350, vd:36,  swatch:'#d9a878', desc:'Type 3 — sometimes burns, tans evenly'},
+  4: {med:450, vd:36,  swatch:'#b9814f', desc:'Type 4 — rarely burns, tans easily'},
+  5:  {med:600, vd:90,  swatch:'#8a5a30', desc:'Type 5 — deeply pigmented. Burns rarely, but does burn.'},
+  6: {med:1000,vd:144, swatch:'#5a3a20', desc:'Type 6 — richly pigmented. Melanin buys you 4× the time, not immunity.'},
 };
 const SPF_LIST = [
   {key:'None', f:1},   {key:'15', f:15}, {key:'30', f:30}, {key:'40', f:40},
@@ -549,7 +549,7 @@ const BANDS = [
 ];
 
 let state = {lat:null, lon:null, place:'', uv:0, uvMax:0, hourly:[], nowHour:null,
-  skin:'III', spf:'None', live:false, uvCeil:null, uvCeilNow:null, sunMu:0.3};
+  skin:'3', spf:'None', live:false, uvCeil:null, uvCeilNow:null, sunMu:0.3};
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
