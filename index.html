@@ -805,7 +805,8 @@ function renderCurve(){
     const merged=g.hours.length>1;
     const isNow = g.hours.some(h=>h.hour===state.nowHour);
     const vd = vdMinsAt(uv), burn = burnMinsAt(uv);
-    const label = merged ? `${fmtHour(first.hour)}\u2013${fmtHour(last.hour)}` : fmtHour(first.hour);
+    const label = fmtHour(first.hour);        // axis shows the bucket's start hour
+    const range = merged ? `${fmtHour(first.hour)}\u2013${fmtHour(last.hour)}` : label;
 
     const col=document.createElement('div');
     col.className='col'+(isNow?' now':'');
