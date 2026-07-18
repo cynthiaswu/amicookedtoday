@@ -84,10 +84,12 @@
   }
 
   /* ---- page grid ------------------------------------------------------ */
-  body{display:grid;grid-template-rows:auto 1fr auto;position:relative}
+  /* minmax(0,1fr) + min-width:0 keep a wide grid item (the 15-column UV curve)
+     from inflating the page past the viewport and clipping cards on mobile */
+  body{display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:minmax(0,1fr);position:relative}
   body > *:not(#sky){position:relative;z-index:2}
   header,main,body > footer{
-    width:100%;max-width:960px;margin:0 auto;padding-inline:var(--shell);
+    width:100%;max-width:960px;margin:0 auto;padding-inline:var(--shell);min-width:0;
   }
 
   /* ---- masthead ------------------------------------------------------- */
@@ -374,8 +376,31 @@
     header{padding-block:20px 16px}
     search{max-width:none}
   }
+  /* Below ~440px the 15-column UV curve's min-content is wider than the
+     viewport. Tighten the chart's gaps, axis and label type so it fits
+     without the page overflowing and clipping every card. */
+  @media (max-width:440px){
+    :root{--shell:14px}
+    #hours{padding:14px}
+    .chart{gap:6px}
+    #yaxis{width:18px}
+    #curve{gap:2px}
+    #hlabels{gap:2px}
+    .hcol .hr{font-size:8px}
+    .hcol .mins{font-size:7.5px}
+    .barfill{max-width:14px}
+  }
   @media (max-width:420px){
     #stats{grid-template-columns:1fr}
+  }
+  @media (max-width:380px){
+    #hours{padding:14px 10px}
+    .chart{gap:5px}
+    #yaxis{width:16px}
+    #curve{gap:1px}
+    #hlabels{gap:1px}
+    .hcol .hr{font-size:7.5px}
+    .hcol .mins{font-size:7px}
   }
   @media (prefers-reduced-motion:reduce){
     *{transition-duration:.001ms!important;animation-duration:.001ms!important}
