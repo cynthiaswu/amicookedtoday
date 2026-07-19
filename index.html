@@ -311,16 +311,6 @@
   }
   .control-select:focus{outline:none;border-color:var(--accent)}
   .control-select option{background:var(--dropdown,#fff);color:var(--ink)}
-  /* skin picker carries the selected sample colour as a left adornment
-     (native <option> swatches don't render on iOS, this does everywhere) */
-  .select-wrap{position:relative}
-  .select-swatch{
-    display:none;
-    position:absolute;left:12px;top:50%;transform:translateY(-50%);
-    width:18px;height:18px;border-radius:50%;
-    border:1px solid rgba(0,0,0,.28);pointer-events:none;z-index:1;
-  }
-  .control-select.has-swatch{padding-left:40px}
 
   /* ---- the curve ------------------------------------------------------ */
   #hours{padding:18px;margin-bottom:16px}
@@ -412,10 +402,13 @@
     #verdict{font-size:16px;margin-top:2px}
     #verdictSub{font-size:11px;margin-top:3px}
     #peakNote{margin-top:5px;line-height:1.5}
-    /* 2. swap the chip rows for native dropdowns */
-    #controls .chips{display:none}
+    /* 2. sunscreen becomes a native dropdown; skin type keeps its six chips,
+       compacted so all six fit in a single row on a narrow screen */
+    #spfChips{display:none}
     .control-select{display:block}
-    .select-swatch{display:block}
+    #skinChips{flex-wrap:nowrap;gap:6px}
+    #skinChips .chip{flex:1 1 0;min-width:0;padding:7px 2px}
+    #skinChips .swatch{width:18px;height:18px}
     /* the JS buckets the day into 2-hour columns, so bars fill their column */
     #hours{padding:14px}
     .chart{gap:6px}
@@ -482,10 +475,6 @@
         <section id="controls">
           <fieldset class="card">
             <legend>Choose your skin type</legend>
-            <div class="select-wrap">
-              <span class="select-swatch" id="skinSwatch" aria-hidden="true"></span>
-              <select class="control-select has-swatch" id="skinSelect" aria-label="Your skin type"></select>
-            </div>
             <div class="chips" id="skinChips" role="radiogroup" aria-label="Your skin type"></div>
             <p class="skin-hint" id="skinHint"></p>
           </fieldset>
@@ -857,14 +846,8 @@ function buildControls(){
     pc.appendChild(b);
   });
 
-  // native dropdowns — the compact mobile mirror of the chip rows.
-  // The skin picker carries the sample colour as an adornment swatch; the
-  // description lives in the hint right below, so the option text stays terse.
-  const ss=$('skinSelect');
-  ss.innerHTML=Object.keys(SKIN).map(k=>`<option value="${k}">Type ${k}</option>`).join('');
-  ss.value=state.skin;
-  $('skinSwatch').style.background=SKIN[state.skin].swatch;
-  ss.onchange=()=>{state.skin=ss.value; savePrefs(); buildControls(); render(); renderCurve();};
+  // sunscreen gets a compact native dropdown on mobile; skin type keeps its
+  // six-chip swatch row at every width (mirrored via CSS on desktop).
   const ps=$('spfSelect');
   ps.innerHTML=SPF_LIST.map(({key})=>`<option value="${key}">${key==='None'?'None':'SPF '+key}</option>`).join('');
   ps.value=state.spf;
@@ -1165,6 +1148,16 @@ function ozoneDU(lat, lon, n){
   return Math.max(du, 290);
 }
 const AEROSOL = 0.92;   // background turbidity — clear sky is not clean sky
+
+// EPA's official altitude correction: UV rises ~6% per km of elevation.
+// Open-Meteo's uv_index is a flat constant applied to GFS flux with NO
+// elevation term, so high cities (Boulder, Denver, Santa Fe) read low vs NOAA.
+// This adds back the exact 6%/km that NOAA applies and Open-Meteo omits.
+// Sea-level cities are unaffected (factor = 1).
+function altitudeFactor(meters){
+  if(!meters || meters < 0) return 1;
+  return 1 + 0.06 * (meters / 1000);
+}
 function modelUVI(lat, lon, date, tzOffsetHrs, clockHour){
   const n = dayOfYear(date);
   const decl = 23.44*RAD * Math.sin(2*Math.PI*(284+n)/365);
@@ -1292,10 +1285,11 @@ async function loadPlace(lat, lon, label, tz){
     clearTimeout(grace);
 
     const times=d.hourly.time, uvs=d.hourly.uv_index, cs=d.hourly.uv_index_clear_sky||[];
+    const alt = altitudeFactor(d.elevation);   // Open-Meteo returns elevation; correct once, here
     state.hourly = times.map((t,i)=>({
       hour:parseInt(t.slice(11,13),10),
-      uv:Math.max(uvs[i]||0,0),
-      clear:Math.max(cs[i]||0,0),          // what this hour would be with no cloud
+      uv:Math.max(uvs[i]||0,0) * alt,
+      clear:Math.max(cs[i]||0,0) * alt,    // what this hour would be with no cloud
     }));
     if(d.current?.time){                    // round to the nearest hour, not truncate
       const hh = parseInt(d.current.time.slice(11,13),10);
@@ -1304,9 +1298,9 @@ async function loadPlace(lat, lon, label, tz){
     }
     let cur = d.current?.uv_index;
     if(cur==null){ const h=state.hourly.find(x=>x.hour===state.nowHour); cur = h?h.uv:m.uv; }
-    state.uv = Math.max(cur,0);
-    state.uvMax = d.daily?.uv_index_max?.[0] ?? m.uvMax;
-    state.uvCeil = d.daily?.uv_index_clear_sky_max?.[0] ?? null;   // today's clear-sky PEAK
+    state.uv = Math.max(cur,0) * alt;
+    state.uvMax = (d.daily?.uv_index_max?.[0] ?? m.uvMax) * alt;
+    state.uvCeil = (d.daily?.uv_index_clear_sky_max?.[0] ?? null) && d.daily.uv_index_clear_sky_max[0] * alt;   // today's clear-sky PEAK, altitude-corrected
     // The cloud delta must compare like with like. uvCeil is a daily maximum;
     // subtracting the current UV from it measures mostly the sun having set,
     // not cloud. Compare this hour's actual against this hour's clear sky.
@@ -1336,16 +1330,66 @@ function setSource(txt){
 }
 
 /* ---------- IP geolocation (best effort) ---------- */
+// Real GPS, promisified. Precise (actual device location), but needs permission
+// and HTTPS. Resolves true on success, false on denial/timeout/insecure context.
+// GPS gives coordinates but no city name. Ask Open-Meteo's reverse geocoder
+// what's there, so the header reads "San Francisco, California" not "My location".
+async function cityFromCoords(lat, lon){
+  try{
+    // BigDataCloud: free, keyless, purpose-built for coordinate -> city.
+    const rr = await tfetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, 3500);
+    if(rr.ok){
+      const g = await rr.json();
+      const city = g.city || g.locality || g.principalSubdivision;
+      const region = g.principalSubdivision || g.countryName;
+      if(city) return [city, region].filter(Boolean).join(', ');
+    }
+  }catch(e){/* fall through to the generic label */}
+  return null;
+}
+
+function gpsLocate(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ resolve(false); return; }
+    navigator.geolocation.getCurrentPosition(
+      async pos=>{
+        const {latitude:lat, longitude:lon} = pos.coords;
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const name = await cityFromCoords(lat, lon);   // resolve a real city name
+        await loadPlace(lat, lon, name || 'My location', tz);
+        resolve(true);
+      },
+      ()=>resolve(false),                       // denied, timed out, or blocked
+      {timeout:8000, maximumAge:600000}
+    );
+  });
+}
+
+// A mobile-carrier IP resolves to the network's gateway city, not the user — so
+// we must skip it and fall back to SF. Providers rarely expose a reliable
+// "connection type" field (ipwho.is omits it entirely), so the durable signal is
+// the ISP/org/ASN name. Match cellular language plus the major carriers.
+const MOBILE_ISP=/\b(mobile|cellular|wireless|lte|4g|5g)\b|t-?mobile|verizon wireless|cellco|at&?t mobility|at&?t wireless|\bsprint\b|cricket|boost|metropcs|metro by t-mobile|u\.?s\.?\s?cellular|google fi|vodafone|telus mobility|rogers|\bbell mobility\b|orange|telefonica|movistar|\bo2\b|\bee\b|three|jio|airtel|\bvi\b|telstra|optus/i;
+function isMobileISP(...parts){ return MOBILE_ISP.test(parts.filter(Boolean).join(' ')); }
 async function ipLocate(){
   const tries=[
-    {u:'https://ipwho.is/', pick:d=>d&&d.success!==false?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone&&d.timezone.id}:null},
-    {u:'https://ipapi.co/json/', pick:d=>d&&!d.error?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone}:null},
-    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone}:null},
+    {u:'https://ipwho.is/', pick:d=>d&&d.success!==false?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone&&d.timezone.id,
+        mobile:(d.connection&&/mobile|cellular/i.test(d.connection.type||''))||isMobileISP(d.connection&&d.connection.isp,d.connection&&d.connection.org,d.connection&&d.connection.domain)}:null},
+    {u:'https://ipapi.co/json/', pick:d=>d&&!d.error?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
+        mobile:isMobileISP(d.org,d.asn,d.network)}:null},
+    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
+        mobile:isMobileISP(d.organization_name,d.organization)}:null},
   ];
   for(const t of tries){
     try{
       const r=await tfetch(t.u, 4000); if(!r.ok) continue;
       const d=await r.json(); const g=t.pick(d);
+      if(g && g.mobile){
+        // mobile carrier IP: location is the gateway city, not the user. Skip it.
+        // (One provider knowing is enough — don't try the others, just bail to SF.)
+        return false;
+      }
       if(g && g.lat!=null && !isNaN(+g.lat)){
         const label=[g.city,g.region||g.country].filter(Boolean).join(', ') || 'Your location';
         await loadPlace(+g.lat,+g.lon,label,g.tz);
@@ -1434,21 +1478,12 @@ function initEvents(){
   document.addEventListener('click',e=>{
     if(!e.target.closest('.loc')) res.style.display='none';
   });
-  $('locateBtn').addEventListener('click',()=>{
+  $('locateBtn').addEventListener('click',async ()=>{
     res.style.display='none';
     $('search').placeholder='Finding you…';
-    if(navigator.geolocation){
-      navigator.geolocation.getCurrentPosition(
-        pos=>loadPlace(pos.coords.latitude,pos.coords.longitude,'My location',Intl.DateTimeFormat().resolvedOptions().timeZone),
-        async()=>{
-          const ok=await ipLocate();
-          if(!ok) setBanner('Couldn\'t pin you down. Type a city above.');
-        },
-        {timeout:8000, maximumAge:600000}
-      );
-    } else {
-      ipLocate().then(ok=>{ if(!ok) setBanner('Couldn\'t pin you down. Type a city above.'); });
-    }
+    let ok = await gpsLocate();               // precise first
+    if(!ok) ok = await ipLocate();            // then network location
+    if(!ok) setBanner('Couldn\'t pin you down. Type a city above.');
   });
 }
 
@@ -1477,11 +1512,14 @@ function savePrefs(){
   buildControls();
   initEvents();
   $('search').placeholder='Finding you…';
+  // No GPS on load — that would prompt for permission on arrival. IP only, which
+  // now skips mobile-carrier IPs (their city is the gateway, not the user) and
+  // falls back to San Francisco. The pin button offers precise GPS on demand.
   const ok = await ipLocate();
   if(!ok){
     $('search').placeholder='Type a city…';
     await loadPlace(37.7749,-122.4194,'San Francisco, California','America/Los_Angeles');
-    setBanner('Couldn\'t auto-detect you here — showing San Francisco. Tap the pin or search a city.');
+    setBanner('Showing San Francisco — tap the pin for your exact location, or search a city.');
   }
 })();
 
