@@ -402,9 +402,13 @@
     #verdict{font-size:16px;margin-top:2px}
     #verdictSub{font-size:11px;margin-top:3px}
     #peakNote{margin-top:5px;line-height:1.5}
-    /* 2. sunscreen becomes a native dropdown; skin type keeps its six chips */
+    /* 2. sunscreen becomes a native dropdown; skin type keeps its six chips,
+       compacted so all six fit in a single row on a narrow screen */
     #spfChips{display:none}
     .control-select{display:block}
+    #skinChips{flex-wrap:nowrap;gap:6px}
+    #skinChips .chip{flex:1 1 0;min-width:0;padding:7px 2px}
+    #skinChips .swatch{width:18px;height:18px}
     /* the JS buckets the day into 2-hour columns, so bars fill their column */
     #hours{padding:14px}
     .chart{gap:6px}
