@@ -1366,13 +1366,20 @@ function gpsLocate(){
   });
 }
 
+// A mobile-carrier IP resolves to the network's gateway city, not the user — so
+// we must skip it and fall back to SF. Providers rarely expose a reliable
+// "connection type" field (ipwho.is omits it entirely), so the durable signal is
+// the ISP/org/ASN name. Match cellular language plus the major carriers.
+const MOBILE_ISP=/\b(mobile|cellular|wireless|lte|4g|5g)\b|t-?mobile|verizon wireless|cellco|at&?t mobility|at&?t wireless|\bsprint\b|cricket|boost|metropcs|metro by t-mobile|u\.?s\.?\s?cellular|google fi|vodafone|telus mobility|rogers|\bbell mobility\b|orange|telefonica|movistar|\bo2\b|\bee\b|three|jio|airtel|\bvi\b|telstra|optus/i;
+function isMobileISP(...parts){ return MOBILE_ISP.test(parts.filter(Boolean).join(' ')); }
 async function ipLocate(){
   const tries=[
     {u:'https://ipwho.is/', pick:d=>d&&d.success!==false?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone&&d.timezone.id,
-        mobile:/mobile|cellular/i.test(d.connection&&d.connection.type||'')}:null},
+        mobile:(d.connection&&/mobile|cellular/i.test(d.connection.type||''))||isMobileISP(d.connection&&d.connection.isp,d.connection&&d.connection.org,d.connection&&d.connection.domain)}:null},
     {u:'https://ipapi.co/json/', pick:d=>d&&!d.error?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
-        mobile:/wireless|cellular|mobile|t-mobile|verizon|at&t sp|sprint/i.test((d.org||'')+' '+(d.asn||''))}:null},
-    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,mobile:false}:null},
+        mobile:isMobileISP(d.org,d.asn,d.network)}:null},
+    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
+        mobile:isMobileISP(d.organization_name,d.organization)}:null},
   ];
   for(const t of tries){
     try{
