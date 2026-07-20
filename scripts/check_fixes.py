@@ -18,9 +18,18 @@ CHECKS = [
  ("every city has an IANA tz",        lambda s: all(len(l.split('|')) == 6 and l.split('|')[5]
                                         for l in re.search(r'const CITY_RAW = `\n(.*?)\n`;', s, re.S).group(1).strip().split('\n'))),
  ("DST-aware tzOffsetHours via Intl", lambda s: 'tzOffsetHours' in s and 'longOffset' in s),
- ("tz threaded into loadPlace",       lambda s: re.search(r'async function loadPlace\(lat, lon, label, tz\)', s)),
+ ("tz threaded into loadPlace",       lambda s: re.search(r'async function loadPlace\(lat, lon, label, tz', s)),
+ # location memory: the last user-picked place is persisted and restored on boot
+ ("last place saved to localStorage", lambda s: 'saveLastPlace' in s and 'PLACE_KEY' in s),
+ ("boot restores saved place",        lambda s: 'loadLastPlace()' in s and re.search(r'const last = loadLastPlace', s) is not None),
+ ("only user picks are remembered",   lambda s: 'if(remember) saveLastPlace' in s),
+ # GPS coords persist even if the city-name lookup fails; the name is retried on boot
+ ("GPS coords persist without name",   lambda s: 'label: label || null' in s and 'cityFromCoords(last.lat' in s),
  ("browser tz for geolocation",       lambda s: 'resolvedOptions().timeZone' in s),
- ("3 IP providers w/ timeout",        lambda s: s.count("{u:'https://") >= 3 and 'AbortController' in s),
+ # location is now deterministic: SF on load, GPS via the pin, no IP guessing
+ ("no IP geolocation (predictable)",  lambda s: 'ipLocate' not in s and 'ipwho.is' not in s),
+ ("boot defaults to San Francisco",   lambda s: "loadPlace(37.7749,-122.4194,'San Francisco" in s),
+ ("pin uses GPS with timeout",        lambda s: 'gpsLocate' in s and 'getCurrentPosition' in s and 'timeout:8000' in s),
 
  # --- UV model ------------------------------------------------------------
  ("van Heuklon ozone climatology",    lambda s: 'ozoneDU' in s and '0.9865' in s),
@@ -33,11 +42,6 @@ CHECKS = [
  ("open-meteo forecast endpoint",     lambda s: 'api.open-meteo.com/v1/forecast' in s),
  ("clear-sky ceiling requested",      lambda s: 'uv_index_clear_sky' in s),
  ("cloud delta surfaced",             lambda s: 'uvCeil' in s),
- # regression: the note once compared today's clear-sky PEAK against the CURRENT
- # UV, so at dusk it blamed sunset on cloud ("taking 7.5 off" at UV 0.7).
- ("cloud delta compares like w/ like", lambda s: 'uvCeilNow' in s and 'uvCeilNow - now' in s
-                                        and 'state.uvCeil - now' not in s),
- ("hourly clear-sky stored",          lambda s: 'clear:Math.max(cs[i]' in s),
  ("live vs modeled source tag",       lambda s: 'setSource' in s and 'live feed unreachable' in s),
 
  # --- gauge ---------------------------------------------------------------

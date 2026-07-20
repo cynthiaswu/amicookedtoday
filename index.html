@@ -1247,9 +1247,10 @@ async function tfetch(url, ms){
 // working page rather than a spinner. Progressive enhancement, minus the flash.
 const GRACE_MS = 450;
 
-async function loadPlace(lat, lon, label, tz){
+async function loadPlace(lat, lon, label, tz, remember){
   $('app').classList.add('loading');
   state.lat=lat; state.lon=lon; state.place=label;
+  if(remember) saveLastPlace(lat, lon, label, tz);   // only user-picked places
   state.sunMu = sunNow(lat, lon, tz);
   $('search').value = label;
   const dstr = dateInTz(tz);
@@ -1358,46 +1359,13 @@ function gpsLocate(){
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const name = await cityFromCoords(lat, lon);   // resolve a real city name
         await loadPlace(lat, lon, name || 'My location', tz);
+        saveLastPlace(lat, lon, name, tz);   // persist coords always; name may be null
         resolve(true);
       },
       ()=>resolve(false),                       // denied, timed out, or blocked
       {timeout:8000, maximumAge:600000}
     );
   });
-}
-
-// A mobile-carrier IP resolves to the network's gateway city, not the user — so
-// we must skip it and fall back to SF. Providers rarely expose a reliable
-// "connection type" field (ipwho.is omits it entirely), so the durable signal is
-// the ISP/org/ASN name. Match cellular language plus the major carriers.
-const MOBILE_ISP=/\b(mobile|cellular|wireless|lte|4g|5g)\b|t-?mobile|verizon wireless|cellco|at&?t mobility|at&?t wireless|\bsprint\b|cricket|boost|metropcs|metro by t-mobile|u\.?s\.?\s?cellular|google fi|vodafone|telus mobility|rogers|\bbell mobility\b|orange|telefonica|movistar|\bo2\b|\bee\b|three|jio|airtel|\bvi\b|telstra|optus/i;
-function isMobileISP(...parts){ return MOBILE_ISP.test(parts.filter(Boolean).join(' ')); }
-async function ipLocate(){
-  const tries=[
-    {u:'https://ipwho.is/', pick:d=>d&&d.success!==false?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone&&d.timezone.id,
-        mobile:(d.connection&&/mobile|cellular/i.test(d.connection.type||''))||isMobileISP(d.connection&&d.connection.isp,d.connection&&d.connection.org,d.connection&&d.connection.domain)}:null},
-    {u:'https://ipapi.co/json/', pick:d=>d&&!d.error?{lat:d.latitude,lon:d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
-        mobile:isMobileISP(d.org,d.asn,d.network)}:null},
-    {u:'https://get.geojs.io/v1/ip/geo.json', pick:d=>d&&d.latitude?{lat:+d.latitude,lon:+d.longitude,city:d.city,region:d.region,country:d.country_code,tz:d.timezone,
-        mobile:isMobileISP(d.organization_name,d.organization)}:null},
-  ];
-  for(const t of tries){
-    try{
-      const r=await tfetch(t.u, 4000); if(!r.ok) continue;
-      const d=await r.json(); const g=t.pick(d);
-      if(g && g.mobile){
-        // mobile carrier IP: location is the gateway city, not the user. Skip it.
-        // (One provider knowing is enough — don't try the others, just bail to SF.)
-        return false;
-      }
-      if(g && g.lat!=null && !isNaN(+g.lat)){
-        const label=[g.city,g.region||g.country].filter(Boolean).join(', ') || 'Your location';
-        await loadPlace(+g.lat,+g.lon,label,g.tz);
-        return true;
-      }
-    }catch(e){/* try next */}
-  }
-  return false;
 }
 
 /* ---------- search: local list first, network as a bonus ---------- */
@@ -1425,7 +1393,7 @@ function renderResults(list){
     b.innerHTML=`${p.name} <span>· ${region}</span>`;
     b.onclick=()=>{
       $('results').style.display='none';
-      loadPlace(p.lat, p.lon, `${p.name}, ${p.admin||p.country}`, p.tz);
+      loadPlace(p.lat, p.lon, `${p.name}, ${p.admin||p.country}`, p.tz, true);
     };
     res.appendChild(b);
   });
@@ -1471,7 +1439,7 @@ function initEvents(){
       const q=input.value.trim();
       if(q.length<2) return;
       const m=localMatches(q);
-      if(m.length){ res.style.display='none'; loadPlace(m[0].lat,m[0].lon,`${m[0].name}, ${m[0].admin||m[0].country}`, m[0].tz); }
+      if(m.length){ res.style.display='none'; loadPlace(m[0].lat,m[0].lon,`${m[0].name}, ${m[0].admin||m[0].country}`, m[0].tz, true); }
       else search(q);
     }
   });
@@ -1481,9 +1449,11 @@ function initEvents(){
   $('locateBtn').addEventListener('click',async ()=>{
     res.style.display='none';
     $('search').placeholder='Finding you…';
-    let ok = await gpsLocate();               // precise first
-    if(!ok) ok = await ipLocate();            // then network location
-    if(!ok) setBanner('Couldn\'t pin you down. Type a city above.');
+    const ok = await gpsLocate();             // GPS only — IP location is unreliable
+    if(!ok){
+      $('search').placeholder='Type a city…';
+      setBanner('Couldn\'t get your location. Allow location access, or search a city above.');
+    }
   });
 }
 
@@ -1507,19 +1477,46 @@ function savePrefs(){
   }catch(e){/* ignore quota / private mode */}
 }
 
+// Remember the last place the user actively chose (search or pin), so a repeat
+// visit boots straight there instead of San Francisco. Kept separate from prefs
+// so clearing one doesn't clobber the other.
+const PLACE_KEY = 'aic:place:v1';
+function saveLastPlace(lat, lon, label, tz){
+  try{
+    // label may be null (GPS fix whose city name didn't resolve) — the
+    // coordinates are still valid and worth keeping; the name is retried on boot.
+    localStorage.setItem(PLACE_KEY, JSON.stringify({lat, lon, label: label || null, tz}));
+  }catch(e){/* ignore quota / private mode */}
+}
+function loadLastPlace(){
+  try{
+    const p = JSON.parse(localStorage.getItem(PLACE_KEY) || 'null');
+    if(p && typeof p.lat==='number' && typeof p.lon==='number') return p;  // name optional
+  }catch(e){/* storage blocked or malformed */}
+  return null;
+}
+
 (async function(){
   loadPrefs();
   buildControls();
   initEvents();
-  $('search').placeholder='Finding you…';
-  // No GPS on load — that would prompt for permission on arrival. IP only, which
-  // now skips mobile-carrier IPs (their city is the gateway, not the user) and
-  // falls back to San Francisco. The pin button offers precise GPS on demand.
-  const ok = await ipLocate();
-  if(!ok){
-    $('search').placeholder='Type a city…';
+  $('search').placeholder='Type a city…';
+  // Boot to the last place the user chose, if any. Otherwise San Francisco —
+  // IP geolocation is unreliable (mobile networks report the carrier's gateway
+  // city), so we don't guess. The user searches or taps the pin; either choice
+  // is remembered for next time.
+  const last = loadLastPlace();
+  if(last && last.label){
+    await loadPlace(last.lat, last.lon, last.label, last.tz);
+  } else if(last){
+    // saved GPS coordinates with no name — retry the reverse geocode (the
+    // network may be back now), then upgrade the stored record if it resolves.
+    const name = await cityFromCoords(last.lat, last.lon);
+    await loadPlace(last.lat, last.lon, name || 'Your location', last.tz);
+    if(name) saveLastPlace(last.lat, last.lon, name, last.tz);
+  } else {
     await loadPlace(37.7749,-122.4194,'San Francisco, California','America/Los_Angeles');
-    setBanner('Showing San Francisco — tap the pin for your exact location, or search a city.');
+    setBanner('Showing San Francisco — tap \uD83D\uDCCD for your location, or search any city.');
   }
 })();
 
