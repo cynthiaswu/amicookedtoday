@@ -1496,7 +1496,7 @@ function loadLastPlace(){
   return null;
 }
 
-(async function(){
+async function boot(){
   loadPrefs();
   buildControls();
   initEvents();
@@ -1518,7 +1518,11 @@ function loadLastPlace(){
     await loadPlace(37.7749,-122.4194,'San Francisco, California','America/Los_Angeles');
     setBanner('Showing San Francisco — tap \uD83D\uDCCD for your location, or search any city.');
   }
-})();
+}
+// Boot after the whole script has parsed, so forward references like the Sky
+// renderer (defined below) are initialized before loadPlace() touches them.
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 
 /* ---------- atmosphere ----------------------------------------------------
    Lying in the grass, looking up. One fullscreen fragment shader — no
