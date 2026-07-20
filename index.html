@@ -585,7 +585,9 @@ function fmtMin(m){
   if(m>=240) return (m/60).toFixed(1).replace('.0','')+'<small> hr</small>';
   return Math.round(m)+'<small> min</small>';
 }
-function setBanner(msg){ const b=$('banner'); if(!msg){b.classList.remove('show');return;} b.textContent=msg; b.classList.add('show'); }
+// Visibility is CSS-driven via #banner:not(:empty), so clearing must empty the
+// text — leaving stale text kept a "cleared" banner on screen.
+function setBanner(msg){ $('banner').textContent = msg || ''; }
 
 /* ---------- accent theming ---------- */
 function smooth(e0,e1,x){ const t=clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
@@ -1516,7 +1518,6 @@ async function boot(){
     if(name) saveLastPlace(last.lat, last.lon, name, last.tz);
   } else {
     await loadPlace(37.7749,-122.4194,'San Francisco, California','America/Los_Angeles');
-    setBanner('Showing San Francisco — tap \uD83D\uDCCD for your location, or search any city.');
   }
 }
 // Boot after the whole script has parsed, so forward references like the Sky
