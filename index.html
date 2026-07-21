@@ -88,6 +88,13 @@
      from inflating the page past the viewport and clipping cards on mobile */
   body{display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:minmax(0,1fr);position:relative}
   body > *:not(#sky){position:relative;z-index:2}
+  /* Lift the masthead's stacking context above the cards so the search dropdown
+     paints in front. The :not(#sky) is REQUIRED, not decorative: the base rule
+     `body > *:not(#sky)` scores an ID via #sky (specificity 1,0,1), so a plain
+     `body > header` (0,0,2) loses to it and the z-index is ignored. Matching the
+     :not(#sky) here makes this (1,0,2) — enough to win. Also scoped to a direct
+     child so it can't hit the nested <header> in the UV-curve card. */
+  body > header:not(#sky){z-index:40}
   header,main,body > footer{
     width:100%;max-width:960px;margin:0 auto;padding-inline:var(--shell);min-width:0;
   }
@@ -148,7 +155,7 @@
   #locateBtn:hover{color:var(--accent);background:var(--accent-soft)}
   #locateBtn svg{width:15px;height:15px;color:inherit}
   #results{
-    position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;
+    position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;
     background:var(--dropdown,#FFFFFF);border:1px solid var(--glass-line);
     border-radius:11px;overflow:hidden;
     box-shadow:0 18px 44px rgba(0,0,0,.55);
@@ -1160,6 +1167,20 @@ function altitudeFactor(meters){
   if(!meters || meters < 0) return 1;
   return 1 + 0.06 * (meters / 1000);
 }
+
+// Open-Meteo's hourly UV is occasionally non-monotonic — a single hour reads
+// above or below its neighbours (interpolation/model-blend noise). Clear-sky UV
+// is physically a smooth single-peaked curve, so any hour moving the wrong way
+// relative to the peak is a data error. Clamp it to its neighbour: only ever
+// pulls impossible values into line; a correct curve is untouched.
+function smoothUV(arr, key){
+  if(arr.length < 3) return arr;
+  let peak = 0;
+  for(let i=1;i<arr.length;i++) if(arr[i][key] > arr[peak][key]) peak = i;
+  for(let i=peak-1;i>=0;i--)         if(arr[i][key] > arr[i+1][key]) arr[i][key] = arr[i+1][key];
+  for(let i=peak+1;i<arr.length;i++) if(arr[i][key] > arr[i-1][key]) arr[i][key] = arr[i-1][key];
+  return arr;
+}
 function modelUVI(lat, lon, date, tzOffsetHrs, clockHour){
   const n = dayOfYear(date);
   const decl = 23.44*RAD * Math.sin(2*Math.PI*(284+n)/365);
@@ -1224,6 +1245,7 @@ function modelDay(lat, lon, tz){
   const localNow = ((utcHour + tzOff) % 24 + 24) % 24;
   const hourly = [];
   for(let h=0; h<24; h++) hourly.push({hour:h, uv:modelUVI(lat,lon,now,tzOff,h)});
+  smoothUV(hourly, 'uv');   // keep both paths uniform
   return {
     hourly,
     nowHour: Math.round(localNow) % 24,   // nearest bar, not the one we're past
@@ -1294,6 +1316,8 @@ async function loadPlace(lat, lon, label, tz, remember){
       uv:Math.max(uvs[i]||0,0) * alt,
       clear:Math.max(cs[i]||0,0) * alt,    // what this hour would be with no cloud
     }));
+    smoothUV(state.hourly, 'uv');          // clamp non-monotonic feed hours
+    smoothUV(state.hourly, 'clear');
     if(d.current?.time){                    // round to the nearest hour, not truncate
       const hh = parseInt(d.current.time.slice(11,13),10);
       const mm = parseInt(d.current.time.slice(14,16),10) || 0;
