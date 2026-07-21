@@ -14,6 +14,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          # our lockfile is in scripts/, not the repo root
           package-manager-cache: false
 
       - uses: actions/setup-python@v6
@@ -30,6 +31,10 @@ jobs:
       # A bad shader edit ships as a blank sky, not an error.
       - name: GLSL compiles
         run: node scripts/check_shader.mjs
+
+      # A z-index that loses on specificity hides the search dropdown behind cards.
+      - name: CSS dropdown stacking
+        run: node scripts/check_css.mjs
 
       # The invisible fixes: ozone term, DST timezones, SPF key ordering.
       - name: Regression checklist
