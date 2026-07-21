@@ -42,6 +42,11 @@ CHECKS = [
  ("open-meteo forecast endpoint",     lambda s: 'api.open-meteo.com/v1/forecast' in s),
  ("clear-sky ceiling requested",      lambda s: 'uv_index_clear_sky' in s),
  ("cloud delta surfaced",             lambda s: 'uvCeil' in s),
+ # regression: the note once compared today's clear-sky PEAK against the CURRENT
+ # UV, so at dusk it blamed sunset on cloud ("taking 7.5 off" at UV 0.7).
+ ("cloud delta compares like w/ like", lambda s: 'uvCeilNow' in s and 'uvCeilNow - now' in s
+                                        and 'state.uvCeil - now' not in s),
+ ("hourly clear-sky stored",          lambda s: 'clear:Math.max(cs[i]' in s),
  ("live vs modeled source tag",       lambda s: 'setSource' in s and 'live feed unreachable' in s),
 
  # --- gauge ---------------------------------------------------------------
