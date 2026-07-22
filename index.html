@@ -1168,17 +1168,30 @@ function altitudeFactor(meters){
   return 1 + 0.06 * (meters / 1000);
 }
 
-// Open-Meteo's hourly UV is occasionally non-monotonic — a single hour reads
-// above or below its neighbours (interpolation/model-blend noise). Clear-sky UV
-// is physically a smooth single-peaked curve, so any hour moving the wrong way
-// relative to the peak is a data error. Clamp it to its neighbour: only ever
-// pulls impossible values into line; a correct curve is untouched.
-function smoothUV(arr, key){
+// Clear-sky UV is physically a smooth, single-peaked curve (peak at solar noon),
+// so a real day should rise without dipping up to the peak and fall without
+// spiking after it. Open-Meteo's observed feed is occasionally non-monotonic — a
+// lone hour reads below its neighbours on the way up, or above them on the way
+// down (interpolation / model-blend noise). We correct these by only ever RAISING
+// the offending hour, never lowering it: a dip before the peak is lifted to the
+// highest value seen so far, and a spike after the peak pulls the hours before it
+// up to match. Erring upward means a shaky reading can never make the tool report
+// LESS sun than there was — the bias is always toward caution.
+//
+// The peak hour is taken from `peakKey` (the clear-sky envelope, when present)
+// rather than the observed data, so a single high glitch can't relocate "the
+// peak" and corrupt both halves of the curve.
+function smoothUV(arr, key, peakKey){
   if(arr.length < 3) return arr;
+  const pk = (peakKey && arr[0][peakKey] !== undefined) ? peakKey : key;
   let peak = 0;
-  for(let i=1;i<arr.length;i++) if(arr[i][key] > arr[peak][key]) peak = i;
-  for(let i=peak-1;i>=0;i--)         if(arr[i][key] > arr[i+1][key]) arr[i][key] = arr[i+1][key];
-  for(let i=peak+1;i<arr.length;i++) if(arr[i][key] > arr[i-1][key]) arr[i][key] = arr[i-1][key];
+  for(let i=1;i<arr.length;i++) if(arr[i][pk] > arr[peak][pk]) peak = i;
+  // up to the peak: never decrease — fill dips up to the running max from the left
+  let run = -Infinity;
+  for(let i=0;i<=peak;i++){ if(arr[i][key] > run) run = arr[i][key]; arr[i][key] = run; }
+  // after the peak: never increase — fill dips up to the running max from the right
+  run = -Infinity;
+  for(let i=arr.length-1;i>=peak;i--){ if(arr[i][key] > run) run = arr[i][key]; arr[i][key] = run; }
   return arr;
 }
 function modelUVI(lat, lon, date, tzOffsetHrs, clockHour){
@@ -1316,7 +1329,7 @@ async function loadPlace(lat, lon, label, tz, remember){
       uv:Math.max(uvs[i]||0,0) * alt,
       clear:Math.max(cs[i]||0,0) * alt,    // what this hour would be with no cloud
     }));
-    smoothUV(state.hourly, 'uv');          // clamp non-monotonic feed hours
+    smoothUV(state.hourly, 'uv', 'clear'); // raise non-monotonic feed hours; peak anchored to clear-sky noon
     smoothUV(state.hourly, 'clear');
     if(d.current?.time){                    // round to the nearest hour, not truncate
       const hh = parseInt(d.current.time.slice(11,13),10);
